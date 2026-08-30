@@ -71,7 +71,7 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- 2. DATA LOADERS FROM GOOGLE SHEETS (DYNAMIC AUTO-POPULATION) ---
+# --- 2. DATA LOADERS FROM GOOGLE SHEETS ---
 @st.cache_data(ttl=30)
 def load_users_data():
   try:
@@ -240,19 +240,8 @@ if not st.session_state["authenticated"]:
         user_org = str(user_row.iloc[0]["Organization"]).strip()
         user_role = str(user_row.iloc[0]["Role"]).strip()
 
-        # Fallback fix for legacy hashes: if password is correct default, auto-correct sheet hash
-        if stored_hash == hashed_input_pw or password_input == "securepassword123":
-          if stored_hash != hashed_input_pw and password_input == "securepassword123":
-            try:
-              client = get_gspread_client()
-              users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Users")
-              cell = users_sheet.find(clean_user)
-              if cell:
-                users_sheet.update_cell(cell.row, 2, hashed_input_pw)
-                st.cache_data.clear()
-            except Exception:
-              pass
-
+        # Strict hash matching only: old password will now fail completely
+        if stored_hash == hashed_input_pw:
           st.session_state["authenticated"] = True
           st.session_state["username"] = clean_user
           st.session_state["role"] = user_role
@@ -307,7 +296,7 @@ else:
 
           if not user_row.empty:
             stored_hash = str(user_row.iloc[0]["Password Hash"]).strip()
-            if stored_hash == hash_password(old_pass) or old_pass == "securepassword123":
+            if stored_hash == hash_password(old_pass):
               new_hash = hash_password(new_pass)
               try:
                 client = get_gspread_client()
