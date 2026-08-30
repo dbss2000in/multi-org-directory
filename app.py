@@ -21,7 +21,7 @@ def get_gspread_client():
   return gspread.authorize(creds)
 
 
-MASTER_SHEET_ID = st.secrets["sheet_id"]
+MASTER_SHEET_ID = st.secrets["gcp_service_account"]["sheet_id"]
 
 # --- 2. MASTER USER CREDENTIALS & ROLE MAPPING ---
 MASTER_USERS = {
