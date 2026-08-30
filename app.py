@@ -1,7 +1,10 @@
 import datetime
 from datetime import datetime
+import io
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import pandas as pd
 import streamlit as st
 
@@ -23,7 +26,48 @@ def get_gspread_client():
   return gspread.authorize(creds)
 
 
+@st.cache_resource
+def get_drive_service():
+  creds_dict = dict(st.secrets["gcp_service_account"])
+  creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+  return build("drive", "v3", credentials=creds)
+
+
 MASTER_SHEET_ID = st.secrets["gcp_service_account"]["sheet_id"]
+
+
+def upload_image_to_drive(uploaded_file):
+  try:
+    drive_service = get_drive_service()
+    file_metadata = {"name": uploaded_file.name}
+    media = MediaIoBaseUpload(
+        io.BytesIO(uploaded_file.getvalue()),
+        mimetype=uploaded_file.type,
+        resumable=True,
+    )
+    file = (
+        drive_service.files()
+        .create(body=file_metadata, media_body=media, fields="id")
+        .execute()
+    )
+    return file.get("id")
+  except Exception as e:
+    return ""
+
+
+def get_image_bytes_from_drive(file_id):
+  try:
+    drive_service = get_drive_service()
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+      _, done = downloader.next_chunk()
+    return fh.getvalue()
+  except Exception:
+    return None
+
 
 # --- 2. MASTER USER CREDENTIALS & ROLE MAPPING ---
 MASTER_USERS = {
@@ -122,7 +166,14 @@ def load_notices_data():
       sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Notices")
     except Exception:
       return pd.DataFrame(
-          columns=["Notice ID", "Organization", "Title", "Content", "Date Posted"]
+          columns=[
+              "Notice ID",
+              "Organization",
+              "Title",
+              "Content",
+              "Date Posted",
+              "Image File ID",
+          ]
       )
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
@@ -131,7 +182,14 @@ def load_notices_data():
     return df.fillna("")
   except Exception as e:
     return pd.DataFrame(
-        columns=["Notice ID", "Organization", "Title", "Content", "Date Posted"]
+        columns=[
+            "Notice ID",
+            "Organization",
+            "Title",
+            "Content",
+            "Date Posted",
+            "Image File ID",
+        ]
     )
 
 
@@ -149,6 +207,7 @@ def load_posts_data():
               "Author Username",
               "Message",
               "Timestamp",
+              "Image File ID",
           ]
       )
     data = sheet.get_all_records()
@@ -164,6 +223,7 @@ def load_posts_data():
             "Author Username",
             "Message",
             "Timestamp",
+            "Image File ID",
         ]
     )
 
@@ -320,6 +380,9 @@ else:
         with st.form("notice_form"):
           notice_title = st.text_input("Notice Title")
           notice_content = st.text_area("Notice Details / Content")
+          notice_image = st.file_uploader(
+              "Attach Image (Optional)", type=["png", "jpg", "jpeg"]
+          )
           submit_notice = st.form_submit_button("Publish Notice")
 
           if submit_notice:
@@ -336,12 +399,17 @@ else:
                 )
                 today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+                image_file_id = ""
+                if notice_image is not None:
+                  image_file_id = upload_image_to_drive(notice_image)
+
                 notice_sheet.append_row([
                     new_id,
                     user_org,
                     notice_title.strip(),
                     notice_content.strip(),
                     today_date,
+                    image_file_id,
                 ])
                 st.cache_data.clear()
                 st.success("Notice published successfully!")
@@ -365,6 +433,13 @@ else:
               f" Management"
           )
           st.write(row.get("Content", ""))
+
+          img_id = str(row.get("Image File ID", "")).strip()
+          if img_id and img_id != "None" and img_id != "":
+            img_bytes = get_image_bytes_from_drive(img_id)
+            if img_bytes:
+              st.image(img_bytes, caption="Notice Attachment", width=500)
+
           st.markdown("---")
 
   # --- COMMUNITY POSTS FEED TAB ---
@@ -385,15 +460,24 @@ else:
     with st.form("new_post_form", clear_on_submit=True):
       st.markdown(f"**Posting as:** `{current_user}` ({user_org})")
       user_message = st.text_area("Write a message or update...")
+      post_image = st.file_uploader(
+          "Attach Image (Optional)",
+          type=["png", "jpg", "jpeg"],
+          key="post_img_upload",
+      )
       submit_post = st.form_submit_button("Post to Group Feed")
 
       if submit_post:
-        if user_message.strip():
+        if user_message.strip() or post_image is not None:
           try:
             client = get_gspread_client()
             posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
             new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            image_file_id = ""
+            if post_image is not None:
+              image_file_id = upload_image_to_drive(post_image)
 
             posts_sheet.append_row([
                 new_post_id,
@@ -401,6 +485,7 @@ else:
                 current_user,
                 user_message.strip(),
                 timestamp,
+                image_file_id,
             ])
             st.cache_data.clear()
             st.success("Post published to your group feed!")
@@ -408,7 +493,7 @@ else:
           except Exception as e:
             st.error(f"Failed to publish post: {e}")
         else:
-          st.warning("Post message cannot be empty.")
+          st.warning("Please provide a message or attach an image to post.")
 
     st.markdown("---")
     st.subheader("Recent Group Activity")
@@ -422,10 +507,16 @@ else:
         author = row.get("Author Username", "Member")
         timestamp = row.get("Timestamp", "")
         message = row.get("Message", "")
+        img_id = str(row.get("Image File ID", "")).strip()
 
         with st.chat_message("user"):
           st.markdown(f"**{author}**  *({timestamp})*")
-          st.write(message)
+          if message:
+            st.write(message)
+          if img_id and img_id != "None" and img_id != "":
+            img_bytes = get_image_bytes_from_drive(img_id)
+            if img_bytes:
+              st.image(img_bytes, width=400)
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
