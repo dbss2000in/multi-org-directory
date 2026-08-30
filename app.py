@@ -389,32 +389,57 @@ else:
           if submit_notice:
             if notice_title.strip() and notice_content.strip():
               try:
-                client = get_gspread_client()
-                notice_sheet = client.open_by_key(
-                    MASTER_SHEET_ID
-                ).worksheet("Notices")
-                new_id = (
-                    str(len(df_notices) + 1)
-                    if not df_notices.empty
-                    else "1"
-                )
-                today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
-
                 image_file_id = ""
-                if notice_image is not None:
-                  image_file_id = upload_image_to_drive(notice_image)
+                upload_failed = False
 
-                notice_sheet.append_row([
-                    new_id,
-                    user_org,
-                    notice_title.strip(),
-                    notice_content.strip(),
-                    today_date,
-                    image_file_id,
-                ])
-                st.cache_data.clear()
-                st.success("Notice published successfully!")
-                st.rerun()
+                if notice_image is not None:
+                  try:
+                    drive_service = get_drive_service()
+                    file_metadata = {"name": notice_image.name}
+                    media = MediaIoBaseUpload(
+                        io.BytesIO(notice_image.getvalue()),
+                        mimetype=notice_image.type,
+                        resumable=True,
+                    )
+                    file = (
+                        drive_service.files()
+                        .create(
+                            body=file_metadata, media_body=media, fields="id"
+                        )
+                        .execute()
+                    )
+                    image_file_id = file.get("id")
+                  except Exception as drive_err:
+                    upload_failed = True
+                    st.error(
+                        "Google Drive Notice Image Upload Failed:"
+                        f" {drive_err}"
+                    )
+
+                if not upload_failed:
+                  client = get_gspread_client()
+                  notice_sheet = client.open_by_key(
+                      MASTER_SHEET_ID
+                  ).worksheet("Notices")
+                  new_id = (
+                      str(len(df_notices) + 1)
+                      if not df_notices.empty
+                      else "1"
+                  )
+                  today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                  notice_sheet.append_row([
+                      new_id,
+                      user_org,
+                      notice_title.strip(),
+                      notice_content.strip(),
+                      today_date,
+                      image_file_id,
+                  ])
+                  st.cache_data.clear()
+                  st.success("Notice published successfully!")
+                  st.rerun()
+
               except Exception as e:
                 st.error(f"Failed to publish notice: {e}")
             else:
@@ -471,26 +496,46 @@ else:
       if submit_post:
         if user_message.strip() or post_image is not None:
           try:
-            client = get_gspread_client()
-            posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
-            new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
             image_file_id = ""
-            if post_image is not None:
-              image_file_id = upload_image_to_drive(post_image)
+            upload_failed = False
 
-            posts_sheet.append_row([
-                new_post_id,
-                user_org,
-                current_user,
-                user_message.strip(),
-                timestamp,
-                image_file_id,
-            ])
-            st.cache_data.clear()
-            st.success("Post published to your group feed!")
-            st.rerun()
+            if post_image is not None:
+              try:
+                drive_service = get_drive_service()
+                file_metadata = {"name": post_image.name}
+                media = MediaIoBaseUpload(
+                    io.BytesIO(post_image.getvalue()),
+                    mimetype=post_image.type,
+                    resumable=True,
+                )
+                file = (
+                    drive_service.files()
+                    .create(body=file_metadata, media_body=media, fields="id")
+                    .execute()
+                )
+                image_file_id = file.get("id")
+              except Exception as drive_err:
+                upload_failed = True
+                st.error(f"Google Drive Upload Failed: {drive_err}")
+
+            if not upload_failed:
+              client = get_gspread_client()
+              posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
+              new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
+              timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+              posts_sheet.append_row([
+                  new_post_id,
+                  user_org,
+                  current_user,
+                  user_message.strip(),
+                  timestamp,
+                  image_file_id,
+              ])
+              st.cache_data.clear()
+              st.success("Post published to your group feed!")
+              st.rerun()
+
           except Exception as e:
             st.error(f"Failed to publish post: {e}")
         else:
