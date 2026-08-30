@@ -211,7 +211,6 @@ else:
             # 5. Facebook -> Profile Link
             fb_raw = str(row.get("Facebook", "None")).strip()
             if fb_raw and fb_raw != "None":
-              # Clean URL format if needed
               fb_path = fb_raw.replace("fb.com/", "").replace(
                   "facebook.com/", ""
               )
@@ -220,10 +219,11 @@ else:
             else:
               st.markdown("**Facebook:** None")
 
-            # 6. Email -> Mailto Link
+            # 6. Email -> Direct Web Compose Link (Gmail)
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
-              st.markdown(f"**Email:** [{email_raw}](mailto:{email_raw})")
+              gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
+              st.markdown(f"**Email:** [{email_raw}]({gmail_url})")
             else:
               st.markdown("**Email:** None")
 
