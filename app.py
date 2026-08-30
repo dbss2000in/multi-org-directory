@@ -1,3 +1,5 @@
+import datetime
+from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
@@ -81,7 +83,6 @@ MASTER_USERS = {
 query_params = st.query_params
 
 if "authenticated" not in st.session_state:
-  # Check if user session details exist in the browser URL query parameters
   if (
       "user" in query_params
       and "role" in query_params
@@ -98,8 +99,8 @@ if "authenticated" not in st.session_state:
     st.session_state["org_name"] = ""
 
 
-# --- 4. DATA LOADER FROM GOOGLE SHEETS ---
-@st.cache_data(ttl=60)
+# --- 4. DATA LOADERS FROM GOOGLE SHEETS ---
+@st.cache_data(ttl=30)
 def load_master_data():
   try:
     client = get_gspread_client()
@@ -109,8 +110,62 @@ def load_master_data():
     df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("None")
   except Exception as e:
-    st.error(f"Error connecting to Google Sheets: {e}")
+    st.error(f"Error connecting to Google Sheets Directory: {e}")
     return pd.DataFrame()
+
+
+@st.cache_data(ttl=30)
+def load_notices_data():
+  try:
+    client = get_gspread_client()
+    try:
+      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Notices")
+    except Exception:
+      return pd.DataFrame(
+          columns=["Notice ID", "Organization", "Title", "Content", "Date Posted"]
+      )
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if not df.empty:
+      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception as e:
+    return pd.DataFrame(
+        columns=["Notice ID", "Organization", "Title", "Content", "Date Posted"]
+    )
+
+
+@st.cache_data(ttl=30)
+def load_posts_data():
+  try:
+    client = get_gspread_client()
+    try:
+      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
+    except Exception:
+      return pd.DataFrame(
+          columns=[
+              "Post ID",
+              "Organization",
+              "Author Username",
+              "Message",
+              "Timestamp",
+          ]
+      )
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if not df.empty:
+      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception as e:
+    return pd.DataFrame(
+        columns=[
+            "Post ID",
+            "Organization",
+            "Author Username",
+            "Message",
+            "Timestamp",
+        ]
+    )
 
 
 # --- 5. AUTHENTICATION / LOGIN VIEW ---
@@ -133,7 +188,6 @@ if not st.session_state["authenticated"]:
         st.session_state["role"] = user_data["role"]
         st.session_state["org_name"] = user_data["org_name"]
 
-        # Save session into URL query parameters so refreshes keep you logged in
         st.query_params["user"] = clean_user
         st.query_params["role"] = user_data["role"]
         st.query_params["org"] = user_data["org_name"]
@@ -148,6 +202,8 @@ if not st.session_state["authenticated"]:
 else:
   df_master = load_master_data()
   user_org = st.session_state["org_name"]
+  current_role = st.session_state["role"]
+  current_user = st.session_state["username"]
 
   if not df_master.empty and "Organization" in df_master.columns:
     df_org = df_master[df_master["Organization"].str.strip() == user_org].copy()
@@ -155,11 +211,10 @@ else:
     df_org = pd.DataFrame()
 
   st.sidebar.title(f"🏢 {user_org}")
-  st.sidebar.markdown(f"**Logged in as:** `{st.session_state['username']}`")
-  st.sidebar.markdown(f"**Role:** `{st.session_state['role'].capitalize()}`")
+  st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
+  st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
 
   if st.sidebar.button("Log Out"):
-    # Clear session and wipe query parameters on manual logout
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
     st.session_state["role"] = ""
@@ -167,8 +222,8 @@ else:
     st.query_params.clear()
     st.rerun()
 
-  tabs = ["Directory"]
-  if st.session_state["role"] == "manager":
+  tabs = ["Directory", "📢 Notice Board", "💬 Community Feed"]
+  if current_role == "manager":
     tabs.append("Manager Admin Portal")
 
   current_tab = st.sidebar.radio("Navigation", tabs)
@@ -202,7 +257,6 @@ else:
 
           with col1:
             st.subheader("📞 Communication Details")
-
             raw_address = str(row.get("Address", "None"))
             if raw_address and raw_address != "None":
               maps_url = (
@@ -224,40 +278,12 @@ else:
             wa_chat_url = f"https://wa.me/{wa_digits}" if wa_digits else "#"
             st.markdown(f"**WhatsApp Chat:** [Open Chat]({wa_chat_url})")
 
-            ig_raw = str(row.get("Instagram", "None")).strip()
-            if ig_raw and ig_raw != "None":
-              ig_handle = ig_raw.lstrip("@")
-              ig_url = f"https://instagram.com/{ig_handle}"
-              st.markdown(f"**Instagram:** [{ig_raw}]({ig_url})")
-            else:
-              st.markdown("**Instagram:** None")
-
-            fb_raw = str(row.get("Facebook", "None")).strip()
-            if fb_raw and fb_raw != "None":
-              fb_path = fb_raw.replace("fb.com/", "").replace(
-                  "facebook.com/", ""
-              )
-              fb_url = f"https://facebook.com/{fb_path}"
-              st.markdown(f"**Facebook:** [{fb_raw}]({fb_url})")
-            else:
-              st.markdown("**Facebook:** None")
-
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
               st.markdown(f"**Email:** [{email_raw}]({gmail_url})")
             else:
               st.markdown("**Email:** None")
-
-            website_raw = str(row.get("Website", "None")).strip()
-            if website_raw and website_raw != "None" and not website_raw.startswith("http"):
-              website_url = f"https://{website_raw}"
-            else:
-              website_url = website_raw
-            if website_url and website_url != "None":
-              st.markdown(f"**Website:** [{website_raw}]({website_url})")
-            else:
-              st.markdown("**Website:** None")
 
           with col2:
             st.subheader("🚨 Medical Emergency & SOS")
@@ -267,7 +293,6 @@ else:
                         - **Medical Conditions:** {row.get('Medical Conditions', 'None')}
                         - **Medications:** {row.get('Medications', 'None')}
                         """)
-
             emerg_phone = str(row.get("Emergency Contact Phone", ""))
             st.info(f"""
                         **Emergency Contact:**
@@ -275,14 +300,135 @@ else:
                         - **Phone:** [{emerg_phone}](tel:{emerg_phone})
                         """)
 
-          st.markdown("---")
-          st.caption(
-              f"Timezone: {row.get('Timezone', 'Asia/Kolkata')} | Notes:"
-              f" {row.get('Notes', 'None')}"
-          )
+  # --- NOTICE BOARD TAB ---
+  elif current_tab == "📢 Notice Board":
+    st.title(f"📢 Official Notices — {user_org}")
+    st.markdown(
+        "View official announcements and updates issued by your organization's"
+        " management."
+    )
 
-  # --- MANAGER ADMIN PORTAL TAB (PERMANENT GOOGLE DRIVE SAVE) ---
-  elif current_tab == "Manager Admin Portal" and st.session_state["role"] == "manager":
+    df_notices = load_notices_data()
+    org_notices = (
+        df_notices[df_notices["Organization"].str.strip() == user_org]
+        if not df_notices.empty
+        else pd.DataFrame()
+    )
+
+    if current_role == "manager":
+      with st.expander("➕ Publish New Notice (Manager Only)", expanded=False):
+        with st.form("notice_form"):
+          notice_title = st.text_input("Notice Title")
+          notice_content = st.text_area("Notice Details / Content")
+          submit_notice = st.form_submit_button("Publish Notice")
+
+          if submit_notice:
+            if notice_title.strip() and notice_content.strip():
+              try:
+                client = get_gspread_client()
+                notice_sheet = client.open_by_key(
+                    MASTER_SHEET_ID
+                ).worksheet("Notices")
+                new_id = (
+                    str(len(df_notices) + 1)
+                    if not df_notices.empty
+                    else "1"
+                )
+                today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                notice_sheet.append_row([
+                    new_id,
+                    user_org,
+                    notice_title.strip(),
+                    notice_content.strip(),
+                    today_date,
+                ])
+                st.cache_data.clear()
+                st.success("Notice published successfully!")
+                st.rerun()
+              except Exception as e:
+                st.error(f"Failed to publish notice: {e}")
+            else:
+              st.warning("Please fill in both title and content.")
+
+    st.markdown("---")
+    if org_notices.empty:
+      st.info(
+          "No official notices have been published for your organization yet."
+      )
+    else:
+      for _, row in org_notices.iloc[::-1].iterrows():
+        with st.container():
+          st.subheader(f"📌 {row.get('Title', 'Notice')}")
+          st.caption(
+              f"Posted on: {row.get('Date Posted', 'Recent')} | Issuer:"
+              f" Management"
+          )
+          st.write(row.get("Content", ""))
+          st.markdown("---")
+
+  # --- COMMUNITY POSTS FEED TAB ---
+  elif current_tab == "💬 Community Feed":
+    st.title(f"💬 Community Discussion Feed — {user_org}")
+    st.markdown(
+        "Share updates, messages, or notes with other members of your"
+        " organization."
+    )
+
+    df_posts = load_posts_data()
+    org_posts = (
+        df_posts[df_posts["Organization"].str.strip() == user_org]
+        if not df_posts.empty
+        else pd.DataFrame()
+    )
+
+    with st.form("new_post_form", clear_on_submit=True):
+      st.markdown(f"**Posting as:** `{current_user}` ({user_org})")
+      user_message = st.text_area("Write a message or update...")
+      submit_post = st.form_submit_button("Post to Group Feed")
+
+      if submit_post:
+        if user_message.strip():
+          try:
+            client = get_gspread_client()
+            posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
+            new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            posts_sheet.append_row([
+                new_post_id,
+                user_org,
+                current_user,
+                user_message.strip(),
+                timestamp,
+            ])
+            st.cache_data.clear()
+            st.success("Post published to your group feed!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Failed to publish post: {e}")
+        else:
+          st.warning("Post message cannot be empty.")
+
+    st.markdown("---")
+    st.subheader("Recent Group Activity")
+    if org_posts.empty:
+      st.info(
+          "No community posts yet. Be the first to share an update with your"
+          " team!"
+      )
+    else:
+      for _, row in org_posts.iloc[::-1].iterrows():
+        author = row.get("Author Username", "Member")
+        timestamp = row.get("Timestamp", "")
+        message = row.get("Message", "")
+
+        with st.chat_message("user"):
+          st.markdown(f"**{author}**  *({timestamp})*")
+          st.write(message)
+
+  # --- MANAGER ADMIN PORTAL TAB ---
+  elif current_tab == "Manager Admin Portal" and current_role == "manager":
     st.title("🛠️ Manager Administrative Portal")
     st.markdown(
         "Add, update, or remove member records. Changes save **permanently**"
@@ -307,7 +453,6 @@ else:
         )
         df_final_save = pd.concat([df_others, edited_org_df], ignore_index=True)
 
-        # Clear and update Google Sheet with complete synchronized data
         sheet.clear()
         sheet.update(
             [df_final_save.columns.values.tolist()]
