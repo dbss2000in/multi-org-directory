@@ -71,25 +71,28 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- 2. DATA LOADERS FROM GOOGLE SHEETS (WITH AUTO-SETUP FOR ALL MANAGERS) ---
+# --- 2. DATA LOADERS FROM GOOGLE SHEETS (BULLETPROOF AUTO-POPULATION) ---
 @st.cache_data(ttl=30)
 def load_users_data():
   try:
     client = get_gspread_client()
-    sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Users")
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
-    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
-    return df.fillna("")
-  except Exception:
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
     try:
-      client = get_gspread_client()
-      spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+      sheet = spreadsheet.worksheet("Users")
+    except Exception:
       sheet = spreadsheet.add_worksheet(title="Users", rows="100", cols="4")
       sheet.append_row(["Username", "Password Hash", "Organization", "Role"])
-      
-      # Default managers for all organizations (Initial password for all: securepassword123)
-      default_pw_hash = "ef92b778bafe771e89245b89ecbc08a44a4e166c0665911ee8ffdcdf137cbabc"
+
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+
+    # If the sheet is empty or missing records, populate default managers automatically
+    if df.empty or "Username" not in df.columns or len(df) == 0:
+      sheet.clear()
+      sheet.append_row(["Username", "Password Hash", "Organization", "Role"])
+      default_pw_hash = (
+          "ef92b778bafe771e89245b89ecbc08a44a4e166c0665911ee8ffdcdf137cbabc"
+      )
       managers_list = [
           ["manager_apollo", default_pw_hash, "Apollo Hospital", "manager"],
           ["principal_xavier", default_pw_hash, "St. Xavier College", "manager"],
@@ -99,15 +102,15 @@ def load_users_data():
       ]
       for m in managers_list:
         sheet.append_row(m)
-
       data = sheet.get_all_records()
       df = pd.DataFrame(data)
-      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
-      return df.fillna("")
-    except Exception as e:
-      return pd.DataFrame(
-          columns=["Username", "Password Hash", "Organization", "Role"]
-      )
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception as e:
+    return pd.DataFrame(
+        columns=["Username", "Password Hash", "Organization", "Role"]
+    )
 
 
 @st.cache_data(ttl=30)
