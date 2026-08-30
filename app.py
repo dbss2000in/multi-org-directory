@@ -1,4 +1,5 @@
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 import pandas as pd
 import streamlit as st
 
@@ -6,7 +7,23 @@ st.set_page_config(
     page_title="Multi-Org Secure Directory", page_icon="🏢", layout="wide"
 )
 
-# --- 1. MASTER USER CREDENTIALS & ROLE MAPPING ---
+# --- 1. CONFIGURATION & SECURE GOOGLE DRIVE CONNECTION ---
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+
+@st.cache_resource
+def get_gspread_client():
+  creds_dict = dict(st.secrets["gcp_service_account"])
+  creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+  return gspread.authorize(creds)
+
+
+MASTER_SHEET_ID = st.secrets["sheet_id"]
+
+# --- 2. MASTER USER CREDENTIALS & ROLE MAPPING ---
 MASTER_USERS = {
     "manager_apollo": {
         "password": "securepassword123",
@@ -60,7 +77,7 @@ MASTER_USERS = {
     },
 }
 
-# --- 2. SESSION STATE PERSISTENCE INITIALIZATION ---
+# --- 3. SESSION STATE INITIALIZATION ---
 if "authenticated" not in st.session_state:
   st.session_state["authenticated"] = False
   st.session_state["username"] = ""
@@ -68,35 +85,22 @@ if "authenticated" not in st.session_state:
   st.session_state["org_name"] = ""
 
 
-# --- 3. DATABASE FILE LOADER & SAVER ---
-def get_db_path():
-  if os.path.exists("Master_Multi_Tenant_Directory_5000.xlsx"):
-    return "Master_Multi_Tenant_Directory_5000.xlsx", "excel"
-  elif os.path.exists("Master_Multi_Tenant_Directory_5000.csv"):
-    return "Master_Multi_Tenant_Directory_5000.csv", "csv"
-  return None, None
-
-
-@st.cache_data(ttl=300)
+# --- 4. DATA LOADER FROM GOOGLE SHEETS ---
+@st.cache_data(ttl=60)
 def load_master_data():
-  file_path, file_type = get_db_path()
-  if not file_path:
-    st.error("Database file not found in repository folder.")
-    return pd.DataFrame()
-
   try:
-    if file_type == "excel":
-      df = pd.read_excel(file_path, engine="openpyxl")
-    else:
-      df = pd.read_csv(file_path)
+    client = get_gspread_client()
+    sheet = client.open_by_key(MASTER_SHEET_ID).sheet1
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
     df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("None")
   except Exception as e:
-    st.error(f"Error reading database file: {e}")
+    st.error(f"Error connecting to Google Sheets: {e}")
     return pd.DataFrame()
 
 
-# --- 4. AUTHENTICATION / LOGIN VIEW ---
+# --- 5. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
   st.title("🔐 Secure Multi-Organization Portal Login")
   st.markdown("Please log in using your assigned organizational credentials.")
@@ -121,7 +125,7 @@ if not st.session_state["authenticated"]:
             "Invalid username or password. Please check your credentials."
         )
 
-# --- 5. AUTHENTICATED USER INTERFACE ---
+# --- 6. AUTHENTICATED USER INTERFACE ---
 else:
   df_master = load_master_data()
   user_org = st.session_state["org_name"]
@@ -136,7 +140,6 @@ else:
   st.sidebar.markdown(f"**Role:** `{st.session_state['role'].capitalize()}`")
 
   if st.sidebar.button("Log Out"):
-    # Clear session state completely on manual logout
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
     st.session_state["role"] = ""
@@ -257,21 +260,23 @@ else:
               f" {row.get('Notes', 'None')}"
           )
 
-  # --- MANAGER ADMIN PORTAL TAB ---
+  # --- MANAGER ADMIN PORTAL TAB (PERMANENT GOOGLE DRIVE SAVE) ---
   elif current_tab == "Manager Admin Portal" and st.session_state["role"] == "manager":
     st.title("🛠️ Manager Administrative Portal")
     st.markdown(
-        "Add, update, or remove member records. Changes only apply to"
-        f" **{user_org}** data."
+        "Add, update, or remove member records. Changes save **permanently**"
+        f" to your Google Drive spreadsheet for **{user_org}**."
     )
 
     edited_org_df = st.data_editor(
         df_org, num_rows="dynamic", use_container_width=True
     )
 
-    if st.button("Save Changes to Master Database"):
+    if st.button("Save Changes to Google Drive"):
       try:
-        file_path, file_type = get_db_path()
+        client = get_gspread_client()
+        sheet = client.open_by_key(MASTER_SHEET_ID).sheet1
+
         edited_org_df["Organization"] = user_org
 
         df_others = (
@@ -281,21 +286,17 @@ else:
         )
         df_final_save = pd.concat([df_others, edited_org_df], ignore_index=True)
 
-        if file_type == "excel" or file_path.endswith(".xlsx"):
-          df_final_save.to_excel(
-              "Master_Multi_Tenant_Directory_5000.xlsx",
-              index=False,
-              engine="openpyxl",
-          )
-        else:
-          df_final_save.to_csv(
-              "Master_Multi_Tenant_Directory_5000.csv", index=False
-          )
+        # Clear and update Google Sheet with complete synchronized data
+        sheet.clear()
+        sheet.update(
+            [df_final_save.columns.values.tolist()]
+            + df_final_save.values.tolist()
+        )
 
         st.cache_data.clear()
         st.success(
-            "Changes successfully saved! Your organization's records have been"
-            " updated."
+            "Changes successfully saved and synced permanently to your Google"
+            " Drive spreadsheet!"
         )
       except Exception as e:
-        st.error(f"Failed to save changes: {e}")
+        st.error(f"Failed to save changes to Google Sheets: {e}")
