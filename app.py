@@ -77,12 +77,25 @@ MASTER_USERS = {
     },
 }
 
-# --- 3. SESSION STATE INITIALIZATION ---
+# --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
+query_params = st.query_params
+
 if "authenticated" not in st.session_state:
-  st.session_state["authenticated"] = False
-  st.session_state["username"] = ""
-  st.session_state["role"] = ""
-  st.session_state["org_name"] = ""
+  # Check if user session details exist in the browser URL query parameters
+  if (
+      "user" in query_params
+      and "role" in query_params
+      and "org" in query_params
+  ):
+    st.session_state["authenticated"] = True
+    st.session_state["username"] = query_params["user"]
+    st.session_state["role"] = query_params["role"]
+    st.session_state["org_name"] = query_params["org"]
+  else:
+    st.session_state["authenticated"] = False
+    st.session_state["username"] = ""
+    st.session_state["role"] = ""
+    st.session_state["org_name"] = ""
 
 
 # --- 4. DATA LOADER FROM GOOGLE SHEETS ---
@@ -119,6 +132,12 @@ if not st.session_state["authenticated"]:
         st.session_state["username"] = clean_user
         st.session_state["role"] = user_data["role"]
         st.session_state["org_name"] = user_data["org_name"]
+
+        # Save session into URL query parameters so refreshes keep you logged in
+        st.query_params["user"] = clean_user
+        st.query_params["role"] = user_data["role"]
+        st.query_params["org"] = user_data["org_name"]
+
         st.rerun()
       else:
         st.error(
@@ -140,10 +159,12 @@ else:
   st.sidebar.markdown(f"**Role:** `{st.session_state['role'].capitalize()}`")
 
   if st.sidebar.button("Log Out"):
+    # Clear session and wipe query parameters on manual logout
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
     st.session_state["role"] = ""
     st.session_state["org_name"] = ""
+    st.query_params.clear()
     st.rerun()
 
   tabs = ["Directory"]
