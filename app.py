@@ -1,11 +1,11 @@
+import base64
 import datetime
 from datetime import datetime
 import io
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import pandas as pd
+from PIL import Image
 import streamlit as st
 
 st.set_page_config(
@@ -26,46 +26,43 @@ def get_gspread_client():
   return gspread.authorize(creds)
 
 
-@st.cache_resource
-def get_drive_service():
-  creds_dict = dict(st.secrets["gcp_service_account"])
-  creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-  return build("drive", "v3", credentials=creds)
-
-
 MASTER_SHEET_ID = st.secrets["gcp_service_account"]["sheet_id"]
 
 
-def upload_image_to_drive(uploaded_file):
+# --- IMAGE PROCESSING & ENCODING (BYPASSES DRIVE STORAGE QUOTA) ---
+def process_image_to_base64(uploaded_file):
   try:
-    drive_service = get_drive_service()
-    file_metadata = {"name": uploaded_file.name}
-    media = MediaIoBaseUpload(
-        io.BytesIO(uploaded_file.getvalue()),
-        mimetype=uploaded_file.type,
-        resumable=True,
-    )
-    file = (
-        drive_service.files()
-        .create(body=file_metadata, media_body=media, fields="id")
-        .execute()
-    )
-    return file.get("id")
+    img = Image.open(uploaded_file)
+    if img.mode in ("RGBA", "P"):
+      img = img.convert("RGB")
+
+    max_size = 600
+    quality = 65
+
+    while True:
+      img_copy = img.copy()
+      img_copy.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+      buffered = io.BytesIO()
+      img_copy.save(buffered, format="JPEG", quality=quality, optimize=True)
+      img_bytes = buffered.getvalue()
+      b64_str = base64.b64encode(img_bytes).decode("utf-8")
+
+      # Keep under Google Sheets single cell character limit (50,000 chars)
+      if len(b64_str) < 48000 or max_size <= 200:
+        return b64_str
+
+      max_size -= 100
+      quality -= 10
   except Exception as e:
-    st.error(f"Google Drive Upload Error: {e}")
+    st.error(f"Image processing error: {e}")
     return ""
 
 
-def get_image_bytes_from_drive(file_id):
+def decode_base64_image(b64_str):
   try:
-    drive_service = get_drive_service()
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while not done:
-      _, done = downloader.next_chunk()
-    return fh.getvalue()
+    if not b64_str or b64_str == "None" or len(str(b64_str).strip()) < 10:
+      return None
+    return base64.b64decode(b64_str)
   except Exception:
     return None
 
@@ -378,7 +375,7 @@ else:
 
     if current_role == "manager":
       with st.expander("➕ Publish New Notice (Manager Only)", expanded=False):
-        with st.form("notice_form"):
+        with st.form("notice_form", clear_on_submit=True):
           notice_title = st.text_input("Notice Title")
           notice_content = st.text_area("Notice Details / Content")
           notice_image = st.file_uploader(
@@ -389,56 +386,32 @@ else:
           if submit_notice:
             if notice_title.strip() and notice_content.strip():
               try:
-                image_file_id = ""
-                upload_failed = False
-
+                image_data_str = ""
                 if notice_image is not None:
-                  try:
-                    drive_service = get_drive_service()
-                    file_metadata = {"name": notice_image.name}
-                    media = MediaIoBaseUpload(
-                        io.BytesIO(notice_image.getvalue()),
-                        mimetype=notice_image.type,
-                        resumable=True,
-                    )
-                    file = (
-                        drive_service.files()
-                        .create(
-                            body=file_metadata, media_body=media, fields="id"
-                        )
-                        .execute()
-                    )
-                    image_file_id = file.get("id")
-                  except Exception as drive_err:
-                    upload_failed = True
-                    st.error(
-                        "Google Drive Notice Image Upload Failed:"
-                        f" {drive_err}"
-                    )
+                  image_data_str = process_image_to_base64(notice_image)
 
-                if not upload_failed:
-                  client = get_gspread_client()
-                  notice_sheet = client.open_by_key(
-                      MASTER_SHEET_ID
-                  ).worksheet("Notices")
-                  new_id = (
-                      str(len(df_notices) + 1)
-                      if not df_notices.empty
-                      else "1"
-                  )
-                  today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+                client = get_gspread_client()
+                notice_sheet = client.open_by_key(
+                    MASTER_SHEET_ID
+                ).worksheet("Notices")
+                new_id = (
+                    str(len(df_notices) + 1)
+                    if not df_notices.empty
+                    else "1"
+                )
+                today_date = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-                  notice_sheet.append_row([
-                      new_id,
-                      user_org,
-                      notice_title.strip(),
-                      notice_content.strip(),
-                      today_date,
-                      image_file_id,
-                  ])
-                  st.cache_data.clear()
-                  st.success("Notice published successfully!")
-                  st.rerun()
+                notice_sheet.append_row([
+                    new_id,
+                    user_org,
+                    notice_title.strip(),
+                    notice_content.strip(),
+                    today_date,
+                    image_data_str,
+                ])
+                st.cache_data.clear()
+                st.success("Notice published successfully!")
+                st.rerun()
 
               except Exception as e:
                 st.error(f"Failed to publish notice: {e}")
@@ -460,9 +433,9 @@ else:
           )
           st.write(row.get("Content", ""))
 
-          img_id = str(row.get("Image File ID", "")).strip()
-          if img_id and img_id != "None" and img_id != "":
-            img_bytes = get_image_bytes_from_drive(img_id)
+          img_data = str(row.get("Image File ID", "")).strip()
+          if img_data and img_data != "None" and img_data != "":
+            img_bytes = decode_base64_image(img_data)
             if img_bytes:
               st.image(img_bytes, caption="Notice Attachment", width=500)
 
@@ -496,45 +469,26 @@ else:
       if submit_post:
         if user_message.strip() or post_image is not None:
           try:
-            image_file_id = ""
-            upload_failed = False
-
+            image_data_str = ""
             if post_image is not None:
-              try:
-                drive_service = get_drive_service()
-                file_metadata = {"name": post_image.name}
-                media = MediaIoBaseUpload(
-                    io.BytesIO(post_image.getvalue()),
-                    mimetype=post_image.type,
-                    resumable=True,
-                )
-                file = (
-                    drive_service.files()
-                    .create(body=file_metadata, media_body=media, fields="id")
-                    .execute()
-                )
-                image_file_id = file.get("id")
-              except Exception as drive_err:
-                upload_failed = True
-                st.error(f"Google Drive Upload Failed: {drive_err}")
+              image_data_str = process_image_to_base64(post_image)
 
-            if not upload_failed:
-              client = get_gspread_client()
-              posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
-              new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
-              timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            client = get_gspread_client()
+            posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
+            new_post_id = str(len(df_posts) + 1) if not df_posts.empty else "1"
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-              posts_sheet.append_row([
-                  new_post_id,
-                  user_org,
-                  current_user,
-                  user_message.strip(),
-                  timestamp,
-                  image_file_id,
-              ])
-              st.cache_data.clear()
-              st.success("Post published to your group feed!")
-              st.rerun()
+            posts_sheet.append_row([
+                new_post_id,
+                user_org,
+                current_user,
+                user_message.strip(),
+                timestamp,
+                image_data_str,
+            ])
+            st.cache_data.clear()
+            st.success("Post published to your group feed!")
+            st.rerun()
 
           except Exception as e:
             st.error(f"Failed to publish post: {e}")
@@ -553,14 +507,14 @@ else:
         author = row.get("Author Username", "Member")
         timestamp = row.get("Timestamp", "")
         message = row.get("Message", "")
-        img_id = str(row.get("Image File ID", "")).strip()
+        img_data = str(row.get("Image File ID", "")).strip()
 
         with st.chat_message("user"):
           st.markdown(f"**{author}**  *({timestamp})*")
           if message:
             st.write(message)
-          if img_id and img_id != "None" and img_id != "":
-            img_bytes = get_image_bytes_from_drive(img_id)
+          if img_data and img_data != "None" and img_data != "":
+            img_bytes = decode_base64_image(img_data)
             if img_bytes:
               st.image(img_bytes, width=400)
 
