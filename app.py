@@ -71,7 +71,7 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- 2. DATA LOADERS FROM GOOGLE SHEETS ---
+# --- 2. DATA LOADERS FROM GOOGLE SHEETS (WITH AUTO-SETUP FOR ALL MANAGERS) ---
 @st.cache_data(ttl=30)
 def load_users_data():
   try:
@@ -81,8 +81,33 @@ def load_users_data():
     df = pd.DataFrame(data)
     df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("")
-  except Exception as e:
-    return pd.DataFrame(columns=["Username", "Password Hash", "Organization", "Role"])
+  except Exception:
+    try:
+      client = get_gspread_client()
+      spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+      sheet = spreadsheet.add_worksheet(title="Users", rows="100", cols="4")
+      sheet.append_row(["Username", "Password Hash", "Organization", "Role"])
+      
+      # Default managers for all organizations (Initial password for all: securepassword123)
+      default_pw_hash = "ef92b778bafe771e89245b89ecbc08a44a4e166c0665911ee8ffdcdf137cbabc"
+      managers_list = [
+          ["manager_apollo", default_pw_hash, "Apollo Hospital", "manager"],
+          ["principal_xavier", default_pw_hash, "St. Xavier College", "manager"],
+          ["manager_rotary", default_pw_hash, "Rotary Club of Calcutta", "manager"],
+          ["manager_tech", default_pw_hash, "TechCorp India Pvt Ltd", "manager"],
+          ["manager_metro", default_pw_hash, "Metro General Hospital", "manager"],
+      ]
+      for m in managers_list:
+        sheet.append_row(m)
+
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+      return df.fillna("")
+    except Exception as e:
+      return pd.DataFrame(
+          columns=["Username", "Password Hash", "Organization", "Role"]
+      )
 
 
 @st.cache_data(ttl=30)
@@ -274,7 +299,9 @@ else:
               new_hash = hash_password(new_pass)
               try:
                 client = get_gspread_client()
-                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Users")
+                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
+                    "Users"
+                )
                 cell = users_sheet.find(current_user)
                 if cell:
                   users_sheet.update_cell(cell.row, 2, new_hash)
@@ -594,7 +621,9 @@ else:
 
       with st.form("create_employee_form", clear_on_submit=True):
         new_emp_user = st.text_input("Employee Username (e.g., emp_apollo101)")
-        new_emp_pass = st.text_input("Initial Temporary Password", type="password")
+        new_emp_pass = st.text_input(
+            "Initial Temporary Password", type="password"
+        )
         submit_new_emp = st.form_submit_button("Create Account")
 
         if submit_new_emp:
