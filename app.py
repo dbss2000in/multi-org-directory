@@ -60,7 +60,7 @@ MASTER_USERS = {
     },
 }
 
-# --- 2. SESSION STATE INITIALIZATION ---
+# --- 2. SESSION STATE PERSISTENCE INITIALIZATION ---
 if "authenticated" not in st.session_state:
   st.session_state["authenticated"] = False
   st.session_state["username"] = ""
@@ -101,7 +101,7 @@ if not st.session_state["authenticated"]:
   st.title("🔐 Secure Multi-Organization Portal Login")
   st.markdown("Please log in using your assigned organizational credentials.")
 
-  with st.form("login_form"):
+  with st.form("login_persistent_form"):
     username_input = st.text_input("Username")
     password_input = st.text_input("Password", type="password")
     submit_button = st.form_submit_button("Login")
@@ -136,7 +136,11 @@ else:
   st.sidebar.markdown(f"**Role:** `{st.session_state['role'].capitalize()}`")
 
   if st.sidebar.button("Log Out"):
+    # Clear session state completely on manual logout
     st.session_state["authenticated"] = False
+    st.session_state["username"] = ""
+    st.session_state["role"] = ""
+    st.session_state["org_name"] = ""
     st.rerun()
 
   tabs = ["Directory"]
@@ -175,7 +179,6 @@ else:
           with col1:
             st.subheader("📞 Communication Details")
 
-            # 1. Address -> Google Maps Search Link
             raw_address = str(row.get("Address", "None"))
             if raw_address and raw_address != "None":
               maps_url = (
@@ -188,18 +191,15 @@ else:
             else:
               st.markdown("**Address:** None")
 
-            # 2. Phone Number -> Tel Link
             phone = str(row.get("Phone Number", ""))
             st.markdown(f"**Phone:** [{phone}](tel:{phone})")
 
-            # 3. WhatsApp Links
             wa_digits = "".join(
                 filter(str.isdigit, str(row.get("WhatsApp Chat", "")))
             )
             wa_chat_url = f"https://wa.me/{wa_digits}" if wa_digits else "#"
             st.markdown(f"**WhatsApp Chat:** [Open Chat]({wa_chat_url})")
 
-            # 4. Instagram -> Profile Link
             ig_raw = str(row.get("Instagram", "None")).strip()
             if ig_raw and ig_raw != "None":
               ig_handle = ig_raw.lstrip("@")
@@ -208,7 +208,6 @@ else:
             else:
               st.markdown("**Instagram:** None")
 
-            # 5. Facebook -> Profile Link
             fb_raw = str(row.get("Facebook", "None")).strip()
             if fb_raw and fb_raw != "None":
               fb_path = fb_raw.replace("fb.com/", "").replace(
@@ -219,7 +218,6 @@ else:
             else:
               st.markdown("**Facebook:** None")
 
-            # 6. Email -> Direct Web Compose Link (Gmail)
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
@@ -227,7 +225,6 @@ else:
             else:
               st.markdown("**Email:** None")
 
-            # 7. Website Link
             website_raw = str(row.get("Website", "None")).strip()
             if website_raw and website_raw != "None" and not website_raw.startswith("http"):
               website_url = f"https://{website_raw}"
