@@ -52,6 +52,7 @@ def upload_image_to_drive(uploaded_file):
     )
     return file.get("id")
   except Exception as e:
+    st.error(f"Google Drive Upload Error: {e}")
     return ""
 
 
