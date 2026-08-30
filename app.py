@@ -7,7 +7,6 @@ st.set_page_config(
 )
 
 # --- 1. MASTER USER CREDENTIALS & ROLE MAPPING ---
-# Maps usernames to their organization and role ('member' or 'manager')
 MASTER_USERS = {
     "manager_apollo": {
         "password": "securepassword123",
@@ -82,11 +81,7 @@ def get_db_path():
 def load_master_data():
   file_path, file_type = get_db_path()
   if not file_path:
-    st.error(
-        "Database file not found. Ensure"
-        " 'Master_Multi_Tenant_Directory_5000.xlsx' is present in the app"
-        " folder."
-    )
+    st.error("Database file not found in repository folder.")
     return pd.DataFrame()
 
   try:
@@ -131,13 +126,11 @@ else:
   df_master = load_master_data()
   user_org = st.session_state["org_name"]
 
-  # Strictly filter records belonging ONLY to the logged-in user's organization
   if not df_master.empty and "Organization" in df_master.columns:
     df_org = df_master[df_master["Organization"].str.strip() == user_org].copy()
   else:
     df_org = pd.DataFrame()
 
-  # Sidebar: Organization & User Information
   st.sidebar.title(f"🏢 {user_org}")
   st.sidebar.markdown(f"**Logged in as:** `{st.session_state['username']}`")
   st.sidebar.markdown(f"**Role:** `{st.session_state['role'].capitalize()}`")
@@ -146,7 +139,6 @@ else:
     st.session_state["authenticated"] = False
     st.rerun()
 
-  # Role-based Tab Access
   tabs = ["Directory"]
   if st.session_state["role"] == "manager":
     tabs.append("Manager Admin Portal")
@@ -182,21 +174,69 @@ else:
 
           with col1:
             st.subheader("📞 Communication Details")
-            st.markdown(f"**Address:** {row.get('Address', 'None')}")
+
+            # 1. Address -> Google Maps Search Link
+            raw_address = str(row.get("Address", "None"))
+            if raw_address and raw_address != "None":
+              maps_url = (
+                  f"https://www.google.com/maps/search/?api=1&query={raw_address.replace(' ', '+')}"
+              )
+              st.markdown(
+                  f"**Address:** [{raw_address}]({maps_url}) (Click to view on"
+                  " Map)"
+              )
+            else:
+              st.markdown("**Address:** None")
+
+            # 2. Phone Number -> Tel Link
             phone = str(row.get("Phone Number", ""))
             st.markdown(f"**Phone:** [{phone}](tel:{phone})")
 
-            # Clean WhatsApp Links
+            # 3. WhatsApp Links
             wa_digits = "".join(
                 filter(str.isdigit, str(row.get("WhatsApp Chat", "")))
             )
             wa_chat_url = f"https://wa.me/{wa_digits}" if wa_digits else "#"
-            st.markdown(f"**WhatsApp Chat:** [Open WhatsApp]({wa_chat_url})")
+            st.markdown(f"**WhatsApp Chat:** [Open Chat]({wa_chat_url})")
 
-            st.markdown(f"**Instagram:** {row.get('Instagram', 'None')}")
-            st.markdown(f"**Facebook:** {row.get('Facebook', 'None')}")
-            st.markdown(f"**Email:** {row.get('Email', 'None')}")
-            st.markdown(f"**Website:** {row.get('Website', 'None')}")
+            # 4. Instagram -> Profile Link
+            ig_raw = str(row.get("Instagram", "None")).strip()
+            if ig_raw and ig_raw != "None":
+              ig_handle = ig_raw.lstrip("@")
+              ig_url = f"https://instagram.com/{ig_handle}"
+              st.markdown(f"**Instagram:** [{ig_raw}]({ig_url})")
+            else:
+              st.markdown("**Instagram:** None")
+
+            # 5. Facebook -> Profile Link
+            fb_raw = str(row.get("Facebook", "None")).strip()
+            if fb_raw and fb_raw != "None":
+              # Clean URL format if needed
+              fb_path = fb_raw.replace("fb.com/", "").replace(
+                  "facebook.com/", ""
+              )
+              fb_url = f"https://facebook.com/{fb_path}"
+              st.markdown(f"**Facebook:** [{fb_raw}]({fb_url})")
+            else:
+              st.markdown("**Facebook:** None")
+
+            # 6. Email -> Mailto Link
+            email_raw = str(row.get("Email", "None")).strip()
+            if email_raw and email_raw != "None":
+              st.markdown(f"**Email:** [{email_raw}](mailto:{email_raw})")
+            else:
+              st.markdown("**Email:** None")
+
+            # 7. Website Link
+            website_raw = str(row.get("Website", "None")).strip()
+            if website_raw and website_raw != "None" and not website_raw.startswith("http"):
+              website_url = f"https://{website_raw}"
+            else:
+              website_url = website_raw
+            if website_url and website_url != "None":
+              st.markdown(f"**Website:** [{website_raw}]({website_url})")
+            else:
+              st.markdown("**Website:** None")
 
           with col2:
             st.subheader("🚨 Medical Emergency & SOS")
@@ -220,7 +260,7 @@ else:
               f" {row.get('Notes', 'None')}"
           )
 
-  # --- MANAGER ADMIN PORTAL TAB (EDIT/ADD/DELETE) ---
+  # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and st.session_state["role"] == "manager":
     st.title("🛠️ Manager Administrative Portal")
     st.markdown(
