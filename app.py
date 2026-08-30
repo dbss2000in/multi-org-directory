@@ -1,6 +1,7 @@
 import base64
 import datetime
 from datetime import datetime
+import hashlib
 import io
 import gspread
 from google.oauth2.service_account import Credentials
@@ -29,7 +30,11 @@ def get_gspread_client():
 MASTER_SHEET_ID = st.secrets["gcp_service_account"]["sheet_id"]
 
 
-# --- IMAGE PROCESSING & ENCODING (BYPASSES DRIVE STORAGE QUOTA) ---
+def hash_password(password):
+  return hashlib.sha256(password.encode()).hexdigest()
+
+
+# --- IMAGE PROCESSING & ENCODING ---
 def process_image_to_base64(uploaded_file):
   try:
     img = Image.open(uploaded_file)
@@ -47,7 +52,6 @@ def process_image_to_base64(uploaded_file):
       img_bytes = buffered.getvalue()
       b64_str = base64.b64encode(img_bytes).decode("utf-8")
 
-      # Keep under Google Sheets single cell character limit (50,000 chars)
       if len(b64_str) < 48000 or max_size <= 200:
         return b64_str
 
@@ -67,81 +71,20 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- 2. MASTER USER CREDENTIALS & ROLE MAPPING ---
-MASTER_USERS = {
-    "manager_apollo": {
-        "password": "securepassword123",
-        "org_name": "Apollo Hospital",
-        "role": "manager",
-    },
-    "emp_apollo1": {
-        "password": "password123",
-        "org_name": "Apollo Hospital",
-        "role": "member",
-    },
-    "principal_xavier": {
-        "password": "xavierpassword",
-        "org_name": "St. Xavier College",
-        "role": "manager",
-    },
-    "student_xavier1": {
-        "password": "password123",
-        "org_name": "St. Xavier College",
-        "role": "member",
-    },
-    "manager_rotary": {
-        "password": "rotarypassword",
-        "org_name": "Rotary Club of Calcutta",
-        "role": "manager",
-    },
-    "member_rotary1": {
-        "password": "password123",
-        "org_name": "Rotary Club of Calcutta",
-        "role": "member",
-    },
-    "manager_tech": {
-        "password": "techpassword",
-        "org_name": "TechCorp India Pvt Ltd",
-        "role": "manager",
-    },
-    "member_tech1": {
-        "password": "password123",
-        "org_name": "TechCorp India Pvt Ltd",
-        "role": "member",
-    },
-    "manager_metro": {
-        "password": "metropassword",
-        "org_name": "Metro General Hospital",
-        "role": "manager",
-    },
-    "member_metro1": {
-        "password": "password123",
-        "org_name": "Metro General Hospital",
-        "role": "member",
-    },
-}
-
-# --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
-query_params = st.query_params
-
-if "authenticated" not in st.session_state:
-  if (
-      "user" in query_params
-      and "role" in query_params
-      and "org" in query_params
-  ):
-    st.session_state["authenticated"] = True
-    st.session_state["username"] = query_params["user"]
-    st.session_state["role"] = query_params["role"]
-    st.session_state["org_name"] = query_params["org"]
-  else:
-    st.session_state["authenticated"] = False
-    st.session_state["username"] = ""
-    st.session_state["role"] = ""
-    st.session_state["org_name"] = ""
+# --- 2. DATA LOADERS FROM GOOGLE SHEETS ---
+@st.cache_data(ttl=30)
+def load_users_data():
+  try:
+    client = get_gspread_client()
+    sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Users")
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception as e:
+    return pd.DataFrame(columns=["Username", "Password Hash", "Organization", "Role"])
 
 
-# --- 4. DATA LOADERS FROM GOOGLE SHEETS ---
 @st.cache_data(ttl=30)
 def load_master_data():
   try:
@@ -226,37 +169,69 @@ def load_posts_data():
     )
 
 
-# --- 5. AUTHENTICATION / LOGIN VIEW ---
+# --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
+query_params = st.query_params
+
+if "authenticated" not in st.session_state:
+  if (
+      "user" in query_params
+      and "role" in query_params
+      and "org" in query_params
+  ):
+    st.session_state["authenticated"] = True
+    st.session_state["username"] = query_params["user"]
+    st.session_state["role"] = query_params["role"]
+    st.session_state["org_name"] = query_params["org"]
+  else:
+    st.session_state["authenticated"] = False
+    st.session_state["username"] = ""
+    st.session_state["role"] = ""
+    st.session_state["org_name"] = ""
+
+
+# --- 4. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
   st.title("🔐 Secure Multi-Organization Portal Login")
   st.markdown("Please log in using your assigned organizational credentials.")
 
-  with st.form("login_persistent_form"):
+  with st.form("login_form"):
     username_input = st.text_input("Username")
     password_input = st.text_input("Password", type="password")
-    submit_button = st.form_submit_button("Login")
+    submit_login = st.form_submit_button("Login")
 
-    if submit_button:
+    if submit_login:
       clean_user = username_input.strip()
-      user_data = MASTER_USERS.get(clean_user)
+      hashed_input_pw = hash_password(password_input)
 
-      if user_data and user_data["password"] == password_input:
-        st.session_state["authenticated"] = True
-        st.session_state["username"] = clean_user
-        st.session_state["role"] = user_data["role"]
-        st.session_state["org_name"] = user_data["org_name"]
+      df_users = load_users_data()
+      user_row = (
+          df_users[df_users["Username"].astype(str).str.strip() == clean_user]
+          if not df_users.empty
+          else pd.DataFrame()
+      )
 
-        st.query_params["user"] = clean_user
-        st.query_params["role"] = user_data["role"]
-        st.query_params["org"] = user_data["org_name"]
+      if not user_row.empty:
+        stored_hash = str(user_row.iloc[0]["Password Hash"]).strip()
+        if stored_hash == hashed_input_pw:
+          user_org = str(user_row.iloc[0]["Organization"]).strip()
+          user_role = str(user_row.iloc[0]["Role"]).strip()
 
-        st.rerun()
+          st.session_state["authenticated"] = True
+          st.session_state["username"] = clean_user
+          st.session_state["role"] = user_role
+          st.session_state["org_name"] = user_org
+
+          st.query_params["user"] = clean_user
+          st.query_params["role"] = user_role
+          st.query_params["org"] = user_org
+
+          st.rerun()
+        else:
+          st.error("Invalid password. Please check your credentials.")
       else:
-        st.error(
-            "Invalid username or password. Please check your credentials."
-        )
+        st.error("Username not found. Please check your credentials.")
 
-# --- 6. AUTHENTICATED USER INTERFACE ---
+# --- 5. AUTHENTICATED USER INTERFACE ---
 else:
   df_master = load_master_data()
   user_org = st.session_state["org_name"]
@@ -271,6 +246,48 @@ else:
   st.sidebar.title(f"🏢 {user_org}")
   st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
+
+  # --- SIDEBAR: CHANGE PASSWORD FEATURE ---
+  with st.sidebar.expander("🔐 Change Password"):
+    with st.form("sidebar_change_pass_form"):
+      old_pass = st.text_input("Current Password", type="password")
+      new_pass = st.text_input("New Password", type="password")
+      confirm_pass = st.text_input("Confirm New Password", type="password")
+      submit_pass = st.form_submit_button("Update Password")
+
+      if submit_pass:
+        if not old_pass or not new_pass:
+          st.warning("Please fill in all fields.")
+        elif new_pass != confirm_pass:
+          st.error("New passwords do not match.")
+        else:
+          df_users = load_users_data()
+          user_row = (
+              df_users[df_users["Username"].astype(str).str.strip() == current_user]
+              if not df_users.empty
+              else pd.DataFrame()
+          )
+
+          if not user_row.empty:
+            stored_hash = str(user_row.iloc[0]["Password Hash"]).strip()
+            if stored_hash == hash_password(old_pass):
+              new_hash = hash_password(new_pass)
+              try:
+                client = get_gspread_client()
+                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Users")
+                cell = users_sheet.find(current_user)
+                if cell:
+                  users_sheet.update_cell(cell.row, 2, new_hash)
+                  st.cache_data.clear()
+                  st.success("Password updated successfully!")
+                else:
+                  st.error("User record not found in sheet.")
+              except Exception as e:
+                st.error(f"Failed to update password: {e}")
+            else:
+              st.error("Incorrect current password.")
+
+  st.sidebar.markdown("---")
 
   if st.sidebar.button("Log Out"):
     st.session_state["authenticated"] = False
@@ -522,38 +539,193 @@ else:
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
     st.title("🛠️ Manager Administrative Portal")
     st.markdown(
-        "Add, update, or remove member records. Changes save **permanently**"
-        f" to your Google Drive spreadsheet for **{user_org}**."
+        "Manage member directory records, create accounts, reset passwords, and"
+        f" offboard staff for **{user_org}**."
     )
 
-    edited_org_df = st.data_editor(
-        df_org, num_rows="dynamic", use_container_width=True
+    admin_sub_tab = st.selectbox(
+        "Manager Actions",
+        [
+            "Manage Directory",
+            "Add New Employee Account",
+            "Reset Employee Password",
+            "Remove Employee Account (Offboarding)",
+        ],
     )
 
-    if st.button("Save Changes to Google Drive"):
-      try:
-        client = get_gspread_client()
-        sheet = client.open_by_key(MASTER_SHEET_ID).sheet1
+    if admin_sub_tab == "Manage Directory":
+      edited_org_df = st.data_editor(
+          df_org, num_rows="dynamic", use_container_width=True
+      )
 
-        edited_org_df["Organization"] = user_org
+      if st.button("Save Directory Changes to Google Drive"):
+        try:
+          client = get_gspread_client()
+          sheet = client.open_by_key(MASTER_SHEET_ID).sheet1
 
-        df_others = (
-            df_master[df_master["Organization"].str.strip() != user_org]
-            if not df_master.empty
-            else pd.DataFrame()
+          edited_org_df["Organization"] = user_org
+
+          df_others = (
+              df_master[df_master["Organization"].str.strip() != user_org]
+              if not df_master.empty
+              else pd.DataFrame()
+          )
+          df_final_save = pd.concat([df_others, edited_org_df], ignore_index=True)
+
+          sheet.clear()
+          sheet.update(
+              [df_final_save.columns.values.tolist()]
+              + df_final_save.values.tolist()
+          )
+
+          st.cache_data.clear()
+          st.success(
+              "Directory changes successfully saved and synced permanently!"
+          )
+        except Exception as e:
+          st.error(f"Failed to save changes to Google Sheets: {e}")
+
+    elif admin_sub_tab == "Add New Employee Account":
+      st.subheader(f"Create Employee Login for {user_org}")
+      st.markdown(
+          "Set a custom unique username and initial temporary password for the"
+          " employee."
+      )
+
+      with st.form("create_employee_form", clear_on_submit=True):
+        new_emp_user = st.text_input("Employee Username (e.g., emp_apollo101)")
+        new_emp_pass = st.text_input("Initial Temporary Password", type="password")
+        submit_new_emp = st.form_submit_button("Create Account")
+
+        if submit_new_emp:
+          clean_emp_user = new_emp_user.strip()
+          if not clean_emp_user or not new_emp_pass:
+            st.warning("Please provide both username and password.")
+          else:
+            df_users_check = load_users_data()
+            existing_usernames = (
+                df_users_check["Username"].astype(str).str.strip().tolist()
+                if not df_users_check.empty
+                else []
+            )
+
+            if clean_emp_user in existing_usernames:
+              st.error(
+                  "This username is already taken. Please choose another one."
+              )
+            else:
+              try:
+                client = get_gspread_client()
+                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
+                    "Users"
+                )
+                hashed_pw = hash_password(new_emp_pass)
+
+                users_sheet.append_row(
+                    [clean_emp_user, hashed_pw, user_org, "member"]
+                )
+                st.cache_data.clear()
+                st.success(
+                    f"Account for '{clean_emp_user}' created successfully under"
+                    f" {user_org}!"
+                )
+              except Exception as e:
+                st.error(f"Failed to create user account: {e}")
+
+    elif admin_sub_tab == "Reset Employee Password":
+      st.subheader(f"Reset Employee Password — {user_org}")
+      st.markdown(
+          "If an employee forgets their password, you can assign them a new"
+          " temporary password here."
+      )
+
+      df_users_all = load_users_data()
+      org_users = (
+          df_users_all[
+              (df_users_all["Organization"].astype(str).str.strip() == user_org)
+              & (df_users_all["Role"].astype(str).str.strip() == "member")
+          ]
+          if not df_users_all.empty
+          else pd.DataFrame()
+      )
+
+      if org_users.empty:
+        st.info("No employee accounts found under your organization.")
+      else:
+        emp_usernames = org_users["Username"].astype(str).str.strip().tolist()
+        with st.form("reset_emp_pass_form", clear_on_submit=True):
+          selected_user_to_reset = st.selectbox(
+              "Select Employee Username", emp_usernames
+          )
+          new_temp_pass = st.text_input(
+              "New Temporary Password", type="password"
+          )
+          submit_reset = st.form_submit_button("Reset Password")
+
+          if submit_reset:
+            if not new_temp_pass:
+              st.warning("Please enter a new password.")
+            else:
+              try:
+                client = get_gspread_client()
+                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
+                    "Users"
+                )
+                cell = users_sheet.find(selected_user_to_reset)
+                if cell:
+                  new_hash = hash_password(new_temp_pass)
+                  users_sheet.update_cell(cell.row, 2, new_hash)
+                  st.cache_data.clear()
+                  st.success(
+                      f"Password for '{selected_user_to_reset}' has been"
+                      " successfully reset!"
+                  )
+                else:
+                  st.error("User row not found in the Google Sheet.")
+              except Exception as e:
+                st.error(f"Failed to reset password: {e}")
+
+    elif admin_sub_tab == "Remove Employee Account (Offboarding)":
+      st.subheader(f"Remove Employee Account — {user_org}")
+      st.markdown(
+          "Select an employee username to immediately revoke their access when"
+          " they leave the organization."
+      )
+
+      df_users_all = load_users_data()
+      org_users = (
+          df_users_all[
+              (df_users_all["Organization"].astype(str).str.strip() == user_org)
+              & (df_users_all["Role"].astype(str).str.strip() == "member")
+          ]
+          if not df_users_all.empty
+          else pd.DataFrame()
+      )
+
+      if org_users.empty:
+        st.info("No employee accounts found under your organization.")
+      else:
+        emp_usernames = org_users["Username"].astype(str).str.strip().tolist()
+        selected_user_to_delete = st.selectbox(
+            "Select Employee Username to Delete", emp_usernames
         )
-        df_final_save = pd.concat([df_others, edited_org_df], ignore_index=True)
 
-        sheet.clear()
-        sheet.update(
-            [df_final_save.columns.values.tolist()]
-            + df_final_save.values.tolist()
-        )
-
-        st.cache_data.clear()
-        st.success(
-            "Changes successfully saved and synced permanently to your Google"
-            " Drive spreadsheet!"
-        )
-      except Exception as e:
-        st.error(f"Failed to save changes to Google Sheets: {e}")
+        if st.button("Revoke & Delete Employee Account"):
+          try:
+            client = get_gspread_client()
+            users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
+                "Users"
+            )
+            cell = users_sheet.find(selected_user_to_delete)
+            if cell:
+              users_sheet.delete_rows(cell.row)
+              st.cache_data.clear()
+              st.success(
+                  f"Account '{selected_user_to_delete}' has been permanently"
+                  " deleted and access revoked."
+              )
+              st.rerun()
+            else:
+              st.error("User row not found in the Google Sheet.")
+          except Exception as e:
+            st.error(f"Failed to delete account: {e}")
