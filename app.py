@@ -244,6 +244,57 @@ def load_comments_data():
     return pd.DataFrame(columns=["Post ID", "Username", "Comment", "Timestamp"])
 
 
+@st.cache_data(ttl=30)
+def load_locality_data():
+  try:
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+    try:
+      sheet = spreadsheet.worksheet("LocalityBulletin")
+    except Exception:
+      sheet = spreadsheet.add_worksheet(title="LocalityBulletin", rows="500", cols="7")
+      sheet.append_row([
+          "Entry ID",
+          "Organization",
+          "Author",
+          "Window",
+          "Category",
+          "Title & Details",
+          "Image File ID",
+      ])
+
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if df.empty or "Entry ID" not in df.columns:
+      sheet.clear()
+      sheet.append_row([
+          "Entry ID",
+          "Organization",
+          "Author",
+          "Window",
+          "Category",
+          "Title & Details",
+          "Image File ID",
+      ])
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(
+        columns=[
+            "Entry ID",
+            "Organization",
+            "Author",
+            "Window",
+            "Category",
+            "Title & Details",
+            "Image File ID",
+        ]
+    )
+
+
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
 query_params = st.query_params
 
@@ -265,6 +316,9 @@ if "authenticated" not in st.session_state:
 
 if "saved_posts" not in st.session_state:
   st.session_state["saved_posts"] = []
+
+if "nav_page" not in st.session_state:
+  st.session_state["nav_page"] = "Directory"
 
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
@@ -369,7 +423,32 @@ else:
 
   st.sidebar.markdown("---")
 
-  if st.sidebar.button("Log Out"):
+  # --- 1. DEDICATED SIDEBAR PUSH BUTTON NAVIGATION ---
+  st.sidebar.markdown("### 🧭 Navigation Menu")
+
+  if st.sidebar.button("📇 Member Directory", use_container_width=True):
+    st.session_state["nav_page"] = "Directory"
+    st.rerun()
+
+  if st.sidebar.button("📢 Official Notice Board", use_container_width=True):
+    st.session_state["nav_page"] = "Notice Board"
+    st.rerun()
+
+  if st.sidebar.button("💬 Community Feed", use_container_width=True):
+    st.session_state["nav_page"] = "Community Feed"
+    st.rerun()
+
+  if st.sidebar.button("🌟 Locality Attractions & Events", use_container_width=True):
+    st.session_state["nav_page"] = "Locality Attractions"
+    st.rerun()
+
+  if current_role == "manager":
+    if st.sidebar.button("🛠️ Manager Admin Portal", use_container_width=True):
+      st.session_state["nav_page"] = "Manager Admin Portal"
+      st.rerun()
+
+  st.sidebar.markdown("---")
+  if st.sidebar.button("Log Out", use_container_width=True):
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
     st.session_state["role"] = ""
@@ -377,11 +456,7 @@ else:
     st.query_params.clear()
     st.rerun()
 
-  tabs = ["Directory", "📢 Notice Board", "💬 Community Feed"]
-  if current_role == "manager":
-    tabs.append("Manager Admin Portal")
-
-  current_tab = st.sidebar.radio("Navigation", tabs)
+  current_tab = st.session_state.get("nav_page", "Directory")
 
   # --- DIRECTORY TAB (READ-ONLY) ---
   if current_tab == "Directory":
@@ -512,7 +587,7 @@ else:
                         """)
 
   # --- NOTICE BOARD TAB ---
-  elif current_tab == "📢 Notice Board":
+  elif current_tab == "Notice Board":
     st.title(f"📢 Official Notices — {user_org}")
     st.markdown(
         "View official announcements and updates issued by your organization's"
@@ -594,8 +669,8 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (FULLY CONTAINED PASTEL CARDS) ---
-  elif current_tab == "💬 Community Feed":
+  # --- 4. COMMUNITY POSTS FEED TAB (CRISP, SMART, SMALLER & COLORFUL COMPOSER + MODERATION) ---
+  elif current_tab == "Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
         "Share updates, messages, or notes with other members of your"
@@ -612,15 +687,29 @@ else:
         else pd.DataFrame()
     )
 
-    with st.form("new_post_form", clear_on_submit=True):
-      st.markdown(f"**Posting as:** `{current_user}` ({user_org})")
-      user_message = st.text_area("Write a message or update...")
-      post_image = st.file_uploader(
-          "Attach Image (Optional)",
-          type=["png", "jpg", "jpeg"],
-          key="post_img_upload",
-      )
-      submit_post = st.form_submit_button("Post to Group Feed")
+    # Crisp, Smart, Colorful Compact Post Box
+    st.markdown(
+        """
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team</h4>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("crisp_post_form", clear_on_submit=True):
+      user_message = st.text_area("What's on your mind?", placeholder="Write a message or update...", height=80)
+      
+      c_col1, c_col2 = st.columns([2, 1])
+      with c_col1:
+        post_image = st.file_uploader(
+            "Attach Image",
+            type=["png", "jpg", "jpeg"],
+            key="post_img_upload",
+        )
+      with c_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        submit_post = st.form_submit_button("🚀 Publish Post", use_container_width=True)
 
       if submit_post:
         if user_message.strip() or post_image is not None:
@@ -643,7 +732,7 @@ else:
                 image_data_str,
             ])
             st.cache_data.clear()
-            st.success("Post published to your group feed!")
+            st.success("Post published successfully!")
             st.rerun()
 
           except Exception as e:
@@ -694,23 +783,25 @@ else:
 
         is_saved = post_id in st.session_state["saved_posts"]
 
-        # Encapsulate Header, Text Message, and Base64 Image completely inside the pastel card div
         msg_html = f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 12px; line-height: 1.5; white-space: pre-wrap;'>{message}</div>" if message else ""
         
         img_html = ""
         if img_data and img_data != "None" and img_data != "":
           img_html = f"<div style='margin-top: 12px; margin-bottom: 4px;'><img src='data:image/jpeg;base64,{img_data}' style='width: 100%; border-radius: 8px; object-fit: cover;'/></div>"
 
+        # Card container with moderation delete button for managers or authors
         st.markdown(
             f"""
             <div style="background-color: {card_bg}; padding: 22px; border-radius: 12px; border: 1.5px solid #d0d7de; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
-                <div style="display: flex; align-items: center; margin-bottom: 14px;">
-                    <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
-                        {author[0].upper()}
-                    </div>
-                    <div>
-                        <div style="font-weight: bold; color: #0f1419; font-size: 16px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
-                        <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center;">
+                        <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
+                            {author[0].upper()}
+                        </div>
+                        <div>
+                            <div style="font-weight: bold; color: #0f1419; font-size: 16px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
+                            <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
+                        </div>
                     </div>
                 </div>
                 {msg_html}
@@ -719,6 +810,25 @@ else:
             """,
             unsafe_allow_html=True,
         )
+
+        # --- 2. MODERATION: MANAGER & AUTHOR DELETE/FLAG CONTROLS ---
+        if current_role == "manager" or current_user == author:
+          del_col1, del_col2, del_col3, del_col4 = st.columns([1, 1, 1, 1])
+          with del_col4:
+            if st.button("🗑️ Delete Post", key=f"del_post_{post_id}"):
+              try:
+                client = get_gspread_client()
+                posts_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Posts")
+                cell = posts_sheet.find(str(post_id))
+                if cell:
+                  posts_sheet.delete_rows(cell.row)
+                  st.cache_data.clear()
+                  st.success("Post successfully removed.")
+                  st.rerun()
+                else:
+                  st.error("Post record not found in sheet.")
+              except Exception as e:
+                st.error(f"Failed to delete post: {e}")
 
         # --- LIVE INTERACTION BUTTONS ---
         col_a, col_b, col_c, col_d = st.columns(4)
@@ -850,6 +960,109 @@ else:
           st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
+
+  # --- 3. LOCALITY ATTRACTIONS & EVENTS PORTAL (MORNING / AFTERNOON WINDOWS) ---
+  elif current_tab == "Locality Attractions":
+    st.title(f"🌟 Locality Attractions, Business & Events Bulletin")
+    st.markdown(
+        "Daily localized updates, attractions, businesses, facilities, and events indexed by category and updated twice daily (Morning & Afternoon)."
+    )
+
+    df_locality = load_locality_data()
+
+    # Manager posting widget for timed windows
+    if current_role == "manager":
+      with st.expander("➕ Publish Daily Locality Bulletin (Manager Only)", expanded=False):
+        with st.form("locality_form", clear_on_submit=True):
+          b_window = st.selectbox("Update Window", ["Morning Window", "Afternoon Window"])
+          b_category = st.selectbox("Category", ["Attractions", "Business", "Facilities", "Events"])
+          b_title_details = st.text_area("Title & Details", placeholder="Enter attraction or event details...")
+          b_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"])
+          submit_bulletin = st.form_submit_button("Publish Bulletin Entry")
+
+          if submit_bulletin:
+            if b_title_details.strip():
+              try:
+                img_str = ""
+                if b_image is not None:
+                  img_str = process_image_to_base64(b_image)
+
+                client = get_gspread_client()
+                loc_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("LocalityBulletin")
+                new_entry_id = str(len(df_locality) + 1) if not df_locality.empty else "1"
+
+                loc_sheet.append_row([
+                    new_entry_id,
+                    user_org,
+                    current_user,
+                    b_window,
+                    b_category,
+                    b_title_details.strip(),
+                    img_str,
+                ])
+                st.cache_data.clear()
+                st.success("Bulletin entry published successfully!")
+                st.rerun()
+              except Exception as e:
+                st.error(f"Failed to publish bulletin: {e}")
+            else:
+              st.warning("Please provide title and details.")
+
+    st.markdown("---")
+
+    # Index filter / View
+    cat_filter = st.selectbox("Filter by Category (Index)", ["All Categories", "Attractions", "Business", "Facilities", "Events"])
+    
+    filtered_loc = df_locality.copy()
+    if cat_filter != "All Categories" and not filtered_loc.empty:
+      filtered_loc = filtered_loc[filtered_loc["Category"].str.strip() == cat_filter]
+
+    if filtered_loc.empty:
+      st.info("No locality updates published yet for this category.")
+    else:
+      for _, row in filtered_loc.iloc[::-1].iterrows():
+        entry_id = row.get("Entry ID", "")
+        org = row.get("Organization", "")
+        author = row.get("Author", "")
+        window = row.get("Window", "")
+        category = row.get("Category", "")
+        details = row.get("Title & Details", "")
+        img_id = str(row.get("Image File ID", "")).strip()
+
+        with st.container():
+          st.markdown(
+              f"""
+              <div style="background-color: #ffffff; padding: 18px; border-radius: 10px; border: 1px solid #d0d7de; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                      <span style="background-color: #0366d6; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">{category}</span>
+                      <span style="color: #586069; font-size: 12px;">🕒 {window} | Issuer: {org}</span>
+                  </div>
+                  <div style="font-size: 15px; color: #24292e; line-height: 1.5; white-space: pre-wrap; margin-top: 8px;">{details}</div>
+              </div>
+              """,
+              unsafe_allow_html=True,
+          )
+
+          if img_id and img_id != "None" and img_id != "":
+            img_bytes = decode_base64_image(img_id)
+            if img_bytes:
+              st.image(img_bytes, use_container_width=True)
+
+          if current_role == "manager" or current_user == author:
+            if st.button("🗑️ Delete Bulletin", key=f"del_loc_{entry_id}"):
+              try:
+                client = get_gspread_client()
+                loc_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("LocalityBulletin")
+                cell = loc_sheet.find(str(entry_id))
+                if cell:
+                  loc_sheet.delete_rows(cell.row)
+                  st.cache_data.clear()
+                  st.success("Bulletin deleted successfully.")
+                  st.rerun()
+              except Exception as e:
+                st.error(f"Failed to delete bulletin: {e}")
+
+          st.markdown("---")
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
