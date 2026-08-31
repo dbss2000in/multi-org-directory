@@ -198,17 +198,22 @@ def load_posts_data():
 def load_likes_data():
   try:
     client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
     try:
-      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Likes")
+      sheet = spreadsheet.worksheet("Likes")
     except Exception:
-      sheet = client.open_by_key(MASTER_SHEET_ID).add_worksheet(
-          title="Likes", rows="500", cols="2"
-      )
+      sheet = spreadsheet.add_worksheet(title="Likes", rows="500", cols="2")
       sheet.append_row(["Post ID", "Username"])
+
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    if not df.empty:
-      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    if df.empty or "Post ID" not in df.columns or "Username" not in df.columns:
+      sheet.clear()
+      sheet.append_row(["Post ID", "Username"])
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("")
   except Exception:
     return pd.DataFrame(columns=["Post ID", "Username"])
@@ -218,17 +223,22 @@ def load_likes_data():
 def load_comments_data():
   try:
     client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
     try:
-      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Comments")
+      sheet = spreadsheet.worksheet("Comments")
     except Exception:
-      sheet = client.open_by_key(MASTER_SHEET_ID).add_worksheet(
-          title="Comments", rows="500", cols="4"
-      )
+      sheet = spreadsheet.add_worksheet(title="Comments", rows="500", cols="4")
       sheet.append_row(["Post ID", "Username", "Comment", "Timestamp"])
+
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    if not df.empty:
-      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    if df.empty or "Post ID" not in df.columns:
+      sheet.clear()
+      sheet.append_row(["Post ID", "Username", "Comment", "Timestamp"])
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("")
   except Exception:
     return pd.DataFrame(columns=["Post ID", "Username", "Comment", "Timestamp"])
@@ -584,7 +594,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (WITH LIVE LIKES, COMMENTS, & SAVES) ---
+  # --- COMMUNITY POSTS FEED TAB (WITH AUTO-CREATED LIKES & COMMENTS) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -660,7 +670,7 @@ else:
         # Calculate actual live likes for this post
         post_likes = (
             df_likes[df_likes["Post ID"].astype(str).str.strip() == post_id]
-            if not df_likes.empty
+            if not df_likes.empty and "Post ID" in df_likes.columns
             else pd.DataFrame()
         )
         like_count = len(post_likes)
@@ -668,14 +678,14 @@ else:
             not post_likes[
                 post_likes["Username"].astype(str).str.strip() == current_user
             ].empty
-            if not post_likes.empty
+            if not post_likes.empty and "Username" in post_likes.columns
             else False
         )
 
         # Calculate actual live comments for this post
         post_comments = (
             df_comments[df_comments["Post ID"].astype(str).str.strip() == post_id]
-            if not df_comments.empty
+            if not df_comments.empty and "Post ID" in df_comments.columns
             else pd.DataFrame()
         )
         comment_count = len(post_comments)
@@ -731,7 +741,6 @@ else:
                   likes_sheet.append_row(["Post ID", "Username"])
 
                 if user_has_liked:
-                  # Unlike: find cell and delete row
                   cell = likes_sheet.find(current_user)
                   while cell:
                     row_vals = likes_sheet.row_values(cell.row)
@@ -744,7 +753,6 @@ else:
                       break
                     cell = likes_sheet.find(current_user, in_column=2)
                 else:
-                  # Like: append row
                   likes_sheet.append_row([str(post_id), current_user])
 
                 st.cache_data.clear()
@@ -768,10 +776,7 @@ else:
           # 3. Share Button
           with col_c:
             if st.button("🔄 Share", key=f"share_btn_{post_id}"):
-              st.toast(
-                  "🔗 Post link copied to clipboard! (You can share it with"
-                  " team members)"
-              )
+              st.toast("🔗 Post link ready to share with team members!")
 
           # 4. Save / Bookmark Button
           with col_d:
@@ -808,7 +813,6 @@ else:
             else:
               st.caption("No comments yet. Be the first to reply!")
 
-            # Add new comment form
             with st.form(key=f"comment_form_{post_id}", clear_on_submit=True):
               new_comment_text = st.text_input(
                   "Write a comment...", key=f"input_comm_{post_id}"
