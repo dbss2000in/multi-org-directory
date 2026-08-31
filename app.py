@@ -594,7 +594,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (ALTERNATING PASTEL COLORS & FULL BORDERS) ---
+  # --- COMMUNITY POSTS FEED TAB (FULLY UNIFIED PASTEL CARDS WITH EMBEDDED IMAGES) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -660,7 +660,6 @@ else:
           " team!"
       )
     else:
-      # Faint pastel color cycle for cards: Light Blue, Light Pink, Mint Green, Pale Peach, Lavender
       pastel_colors = ["#f0f8ff", "#fff0f5", "#f0fff0", "#fffaf0", "#f8f0ff"]
 
       for idx, (_, row) in enumerate(org_posts.iloc[::-1].iterrows()):
@@ -670,7 +669,6 @@ else:
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
 
-        # Pick alternating pastel background color
         card_bg = pastel_colors[idx % len(pastel_colors)]
 
         post_likes = (
@@ -696,12 +694,17 @@ else:
 
         is_saved = post_id in st.session_state["saved_posts"]
 
-        # Card container with full border on all 4 sides and alternating soft pastel tint
-        msg_html = f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap;'>{message}</div>" if message else ""
+        # Build message and image HTML so they stay 100% inside the pastel card container
+        msg_html = f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 12px; line-height: 1.5; white-space: pre-wrap;'>{message}</div>" if message else ""
+        
+        img_html = ""
+        if img_data and img_data != "None" and img_data != "":
+          img_html = f"<div style='margin-top: 12px; margin-bottom: 12px;'><img src='data:image/jpeg;base64,{img_data}' style='width: 100%; border-radius: 8px; object-fit: cover;'/></div>"
 
+        # Unified pastel card container wrapping avatar, header, message, and image together
         st.markdown(
             f"""
-            <div style="background-color: {card_bg}; padding: 22px; border-radius: 12px; border: 1.5px solid #d0d7de; margin-bottom: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+            <div style="background-color: {card_bg}; padding: 22px; border-radius: 12px; border: 1.5px solid #d0d7de; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
                 <div style="display: flex; align-items: center; margin-bottom: 14px;">
                     <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
                         {author[0].upper()}
@@ -712,14 +715,11 @@ else:
                     </div>
                 </div>
                 {msg_html}
+                {img_html}
+            </div>
             """,
             unsafe_allow_html=True,
         )
-
-        if img_data and img_data != "None" and img_data != "":
-          img_bytes = decode_base64_image(img_data)
-          if img_bytes:
-            st.image(img_bytes, use_container_width=True)
 
         # --- LIVE INTERACTION BUTTONS ---
         col_a, col_b, col_c, col_d = st.columns(4)
@@ -793,7 +793,7 @@ else:
         if st.session_state.get(f"show_comm_{post_id}", False):
           st.markdown(
               "<div style='background-color: #ffffff; padding: 14px;"
-              " border-radius: 8px; margin-top: 12px; margin-bottom: 12px; border: 1px solid #d0d7de;'>",
+              " border-radius: 8px; margin-top: 8px; margin-bottom: 12px; border: 1px solid #d0d7de;'>",
               unsafe_allow_html=True,
           )
           st.markdown("**Comments Section**")
@@ -850,8 +850,7 @@ else:
 
           st.markdown("</div>", unsafe_allow_html=True)
 
-        # Closing container div for pastel card box
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px solid #d0d7de;'>", unsafe_allow_html=True)
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
