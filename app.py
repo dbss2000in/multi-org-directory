@@ -354,11 +354,32 @@ else:
         name = row.get("Full Name", "Member")
         blood = row.get("Blood Group", "N/A")
         bio_text = str(row.get("Bio", "")).strip()
+        org_name = row.get("Organization", user_org)
+        member_role = row.get("Role", "Member")
+        birthday = row.get("Birthday", "")
+        timezone = row.get("Timezone", "")
+        notes = row.get("Notes", "")
 
-        with st.expander(f"👤 {name}  |  🩸 Blood Group: {blood}"):
+        with st.expander(f"👤 {name}  |  🏢 {org_name}  |  🩸 Blood Group: {blood}"):
+          # Display Bio if available
           if bio_text and bio_text != "None":
             st.info(f"**Bio:** {bio_text}")
 
+          # Display Profile Meta (Role, Birthday, Timezone, Notes)
+          meta_cols = st.columns(4)
+          with meta_cols[0]:
+            st.markdown(f"**Role:** `{str(member_role).capitalize()}`")
+          with meta_cols[1]:
+            if birthday and birthday != "None":
+              st.markdown(f"🎂 **Birthday:** {birthday}")
+          with meta_cols[2]:
+            if timezone and timezone != "None":
+              st.markdown(f"🌍 **Timezone:** {timezone}")
+          with meta_cols[3]:
+            if notes and notes != "None":
+              st.markdown(f"📝 **Notes:** {notes}")
+
+          st.markdown("---")
           col1, col2 = st.columns(2)
 
           with col1:
@@ -394,7 +415,7 @@ else:
             wa_call = str(row.get("WhatsApp Call", "")).strip()
             if wa_call and wa_call != "None":
               wa_call_digits = "".join(filter(str.isdigit, wa_call))
-              st.markdown(f"**WhatsApp Call:** [Call]({wa_link if 'wa_link' in locals() else f'https://wa.me/{wa_call_digits}'})")
+              st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
 
             # Facebook
             fb_link = str(row.get("Facebook", "")).strip()
@@ -416,6 +437,13 @@ else:
               if not x_link.startswith("http"):
                 x_link = f"https://twitter.com/{x_link.replace('@', '')}"
               st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
+
+            # Website
+            web_link = str(row.get("Website", "")).strip()
+            if web_link and web_link != "None":
+              if not web_link.startswith("http"):
+                web_link = f"https://{web_link}"
+              st.markdown(f"**Website:** [Visit Website]({web_link})")
 
             # Email
             email_raw = str(row.get("Email", "None")).strip()
