@@ -8,7 +8,6 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from PIL import Image
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(
     page_title="TogetheSpace v0.2 — Secure Multi-Org Portal", page_icon="🏢", layout="wide"
@@ -1008,14 +1007,19 @@ else:
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
 
-  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT WITH AUTO-REFRESH & IMAGES) ---
+  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT WITH MANUAL REFRESH & ZERO API QUOTA ISSUES) ---
   elif current_tab == "Private Messages":
-    st.title(f"🔒 Secure Private Messages — {user_org}")
-    st.caption("✨ Powered by TogetheSpace v0.2")
-    st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
+    col_t1, col_t2 = st.columns([4, 1])
+    with col_t1:
+      st.title(f"🔒 Secure Private Messages — {user_org}")
+      st.caption("✨ Powered by TogetheSpace v0.2")
+    with col_t2:
+      st.markdown("<br>", unsafe_allow_html=True)
+      if st.button("🔄 Refresh Chat", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-    # Optimized refresh interval set to 15 seconds to prevent Google API rate limits (429 Quota Exceeded)
-    st_autorefresh(interval=15000, key="chat_autorefresh")
+    st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
 
     df_users_all = load_users_data()
     org_members = (
