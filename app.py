@@ -296,7 +296,6 @@ def load_locality_data():
     )
 
 
-@st.cache_data(ttl=30)
 def load_private_messages_data():
   try:
     client = get_gspread_client()
@@ -606,7 +605,7 @@ else:
             x_link = str(row.get("Twitter", "")).strip()
             if x_link and x_link != "None":
               if not x_link.startswith("http"):
-                x_link = f"https://twitter.com/{x_link.replace('@', '')}"
+                x_link = f"https://{x_link.replace('@', '')}"
               st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
 
             web_link = str(row.get("Website", "")).strip()
@@ -1015,7 +1014,8 @@ else:
     st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
 
-    st_autorefresh(interval=5000, key="chat_autorefresh")
+    # Optimized refresh interval set to 15 seconds to prevent Google API rate limits (429 Quota Exceeded)
+    st_autorefresh(interval=15000, key="chat_autorefresh")
 
     df_users_all = load_users_data()
     org_members = (
