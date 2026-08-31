@@ -10,7 +10,7 @@ from PIL import Image
 import streamlit as st
 
 st.set_page_config(
-    page_title="Multi-Org Secure Directory", page_icon="🏢", layout="wide"
+    page_title="Multi-Org Secure Directory v0.2", page_icon="🏢", layout="wide"
 )
 
 # --- 1. CONFIGURATION & SECURE GOOGLE DRIVE CONNECTION ---
@@ -323,7 +323,7 @@ if "nav_page" not in st.session_state:
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
-  st.title("🔐 Secure Multi-Organization Portal Login")
+  st.title("🔐 Secure Multi-Organization Portal (v0.2)")
   st.markdown("Please log in using your assigned organizational credentials.")
 
   with st.form("login_form"):
@@ -376,6 +376,7 @@ else:
     df_org = pd.DataFrame()
 
   st.sidebar.title(f"🏢 {user_org}")
+  st.sidebar.caption("v0.2 Enterprise Edition")
   st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
 
@@ -423,7 +424,7 @@ else:
 
   st.sidebar.markdown("---")
 
-  # --- 1. DEDICATED SIDEBAR PUSH BUTTON NAVIGATION ---
+  # --- SIDEBAR PUSH BUTTON NAVIGATION ---
   st.sidebar.markdown("### 🧭 Navigation Menu")
 
   if st.sidebar.button("📇 Member Directory", use_container_width=True):
@@ -460,7 +461,7 @@ else:
 
   # --- DIRECTORY TAB (READ-ONLY) ---
   if current_tab == "Directory":
-    st.title(f"📇 {user_org} - Member Directory & SOS")
+    st.title(f"📇 {user_org} - Member Directory & SOS (v0.2)")
 
     search_query = st.sidebar.text_input("Search Directory (Name or Notes)")
     filtered_df = df_org.copy()
@@ -588,7 +589,7 @@ else:
 
   # --- NOTICE BOARD TAB ---
   elif current_tab == "Notice Board":
-    st.title(f"📢 Official Notices — {user_org}")
+    st.title(f"📢 Official Notices — {user_org} (v0.2)")
     st.markdown(
         "View official announcements and updates issued by your organization's"
         " management."
@@ -669,9 +670,9 @@ else:
 
           st.markdown("---")
 
-  # --- 4. COMMUNITY POSTS FEED TAB (CRISP, SMART, SMALLER & COLORFUL COMPOSER + MODERATION) ---
+  # --- COMMUNITY POSTS FEED TAB ---
   elif current_tab == "Community Feed":
-    st.title(f"💬 Community Discussion Feed — {user_org}")
+    st.title(f"💬 Community Discussion Feed — {user_org} (v0.2)")
     st.markdown(
         "Share updates, messages, or notes with other members of your"
         " organization."
@@ -687,11 +688,10 @@ else:
         else pd.DataFrame()
     )
 
-    # Crisp, Smart, Colorful Compact Post Box
     st.markdown(
         """
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team</h4>
+            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team (v0.2)</h4>
         </div>
         """,
         unsafe_allow_html=True,
@@ -789,7 +789,6 @@ else:
         if img_data and img_data != "None" and img_data != "":
           img_html = f"<div style='margin-top: 12px; margin-bottom: 4px;'><img src='data:image/jpeg;base64,{img_data}' style='width: 100%; border-radius: 8px; object-fit: cover;'/></div>"
 
-        # Card container with moderation delete button for managers or authors
         st.markdown(
             f"""
             <div style="background-color: {card_bg}; padding: 22px; border-radius: 12px; border: 1.5px solid #d0d7de; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
@@ -811,7 +810,6 @@ else:
             unsafe_allow_html=True,
         )
 
-        # --- 2. MODERATION: MANAGER & AUTHOR DELETE/FLAG CONTROLS ---
         if current_role == "manager" or current_user == author:
           del_col1, del_col2, del_col3, del_col4 = st.columns([1, 1, 1, 1])
           with del_col4:
@@ -961,16 +959,15 @@ else:
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
 
-  # --- 3. LOCALITY ATTRACTIONS & EVENTS PORTAL (MORNING / AFTERNOON WINDOWS) ---
+  # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
-    st.title(f"🌟 Locality Attractions, Business & Events Bulletin")
+    st.title(f"🌟 Locality Attractions, Business & Events Bulletin (v0.2)")
     st.markdown(
         "Daily localized updates, attractions, businesses, facilities, and events indexed by category and updated twice daily (Morning & Afternoon)."
     )
 
     df_locality = load_locality_data()
 
-    # Manager posting widget for timed windows
     if current_role == "manager":
       with st.expander("➕ Publish Daily Locality Bulletin (Manager Only)", expanded=False):
         with st.form("locality_form", clear_on_submit=True):
@@ -1010,7 +1007,6 @@ else:
 
     st.markdown("---")
 
-    # Index filter / View
     cat_filter = st.selectbox("Filter by Category (Index)", ["All Categories", "Attractions", "Business", "Facilities", "Events"])
     
     filtered_loc = df_locality.copy()
@@ -1066,7 +1062,7 @@ else:
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
-    st.title("🛠️ Manager Administrative Portal")
+    st.title("🛠️ Manager Administrative Portal (v0.2)")
     st.markdown(
         "Manage member directory records, create accounts, reset passwords, and"
         f" offboard staff for **{user_org}**."
