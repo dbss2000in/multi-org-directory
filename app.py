@@ -323,7 +323,7 @@ if "nav_page" not in st.session_state:
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
-  st.title("🔐 TogetheSpace v0.2 Portal Login")
+  st.title("🔐 TogetheSpace v0.2 — Portal Login")
   st.markdown("Please log in using your assigned organizational credentials.")
 
   with st.form("login_form"):
@@ -376,9 +376,9 @@ else:
     df_org = pd.DataFrame()
 
   st.sidebar.title(f"🏢 {user_org}")
+  st.sidebar.caption("✨ TogetheSpace v0.2")
   st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
-  st.sidebar.markdown(f"**App Version:** `v0.2`")
 
   # --- SIDEBAR: CHANGE PASSWORD FEATURE ---
   with st.sidebar.expander("🔐 Change Password"):
@@ -424,7 +424,7 @@ else:
 
   st.sidebar.markdown("---")
 
-  # --- PUSH BUTTON NAVIGATION MENU ---
+  # --- SIDEBAR PUSH BUTTON NAVIGATION ---
   st.sidebar.markdown("### 🧭 Navigation Menu")
 
   if st.sidebar.button("📇 Member Directory", use_container_width=True):
@@ -462,6 +462,7 @@ else:
   # --- DIRECTORY TAB (READ-ONLY) ---
   if current_tab == "Directory":
     st.title(f"📇 {user_org} - Member Directory & SOS")
+    st.caption("✨ Powered by TogetheSpace v0.2")
 
     search_query = st.sidebar.text_input("Search Directory (Name or Notes)")
     filtered_df = df_org.copy()
@@ -590,6 +591,7 @@ else:
   # --- NOTICE BOARD TAB ---
   elif current_tab == "Notice Board":
     st.title(f"📢 Official Notices — {user_org}")
+    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
         "View official announcements and updates issued by your organization's"
         " management."
@@ -673,6 +675,7 @@ else:
   # --- COMMUNITY POSTS FEED TAB ---
   elif current_tab == "Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
+    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
         "Share updates, messages, or notes with other members of your"
         " organization."
@@ -688,7 +691,6 @@ else:
         else pd.DataFrame()
     )
 
-    # Crisp, Smart, Colorful Compact Post Box
     st.markdown(
         """
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
@@ -811,7 +813,6 @@ else:
             unsafe_allow_html=True,
         )
 
-        # Moderation delete button for managers or authors
         if current_role == "manager" or current_user == author:
           del_col1, del_col2, del_col3, del_col4 = st.columns([1, 1, 1, 1])
           with del_col4:
@@ -830,7 +831,6 @@ else:
               except Exception as e:
                 st.error(f"Failed to delete post: {e}")
 
-        # --- LIVE INTERACTION BUTTONS ---
         col_a, col_b, col_c, col_d = st.columns(4)
 
         with col_a:
@@ -898,7 +898,6 @@ else:
               st.toast("Post saved to bookmarks!")
             st.rerun()
 
-        # --- RENDER COMMENTS SECTION IF TOGGLED ---
         if st.session_state.get(f"show_comm_{post_id}", False):
           st.markdown(
               "<div style='background-color: #ffffff; padding: 14px;"
@@ -964,6 +963,7 @@ else:
   # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
     st.title(f"🌟 Locality Attractions, Business & Events Bulletin")
+    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
         "Daily localized updates, attractions, businesses, facilities, and events indexed by category and updated twice daily (Morning & Afternoon)."
     )
@@ -1064,7 +1064,8 @@ else:
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
-    st.title("🛠️ Manager Administrative Portal")
+    st.title(f"🛠️ Manager Administrative Portal — {user_org}")
+    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
         "Manage member directory records, create accounts, reset passwords, and"
         f" offboard staff for **{user_org}**."
