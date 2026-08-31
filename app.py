@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from PIL import Image
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(
     page_title="TogetheSpace v0.2 — Secure Multi-Org Portal", page_icon="🏢", layout="wide"
@@ -303,21 +304,21 @@ def load_private_messages_data():
     try:
       sheet = spreadsheet.worksheet("PrivateMessages")
     except Exception:
-      sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="5")
-      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+      sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="7")
+      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
 
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     if df.empty or "Sender" not in df.columns:
       sheet.clear()
-      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
       data = sheet.get_all_records()
       df = pd.DataFrame(data)
 
     df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("")
   except Exception:
-    return pd.DataFrame(columns=["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+    return pd.DataFrame(columns=["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
 
 
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
@@ -449,6 +450,19 @@ else:
 
   st.sidebar.markdown("---")
 
+  # Calculate total unread private messages for badge display
+  df_pm_all = load_private_messages_data()
+  unread_count = 0
+  if not df_pm_all.empty and "Recipient" in df_pm_all.columns:
+    unread_df = df_pm_all[
+        (df_pm_all["Organization"].astype(str).str.strip() == user_org) &
+        (df_pm_all["Recipient"].astype(str).str.strip() == current_user) &
+        (df_pm_all["ReadStatus"].astype(str).str.strip() != "Read")
+    ]
+    unread_count = len(unread_df)
+
+  pm_button_label = f"🔒 Private Messages ({unread_count})" if unread_count > 0 else "🔒 Private Messages"
+
   # --- SIDEBAR PUSH BUTTON NAVIGATION ---
   st.sidebar.markdown("### 🧭 Navigation Menu")
 
@@ -464,7 +478,7 @@ else:
     st.session_state["nav_page"] = "Community Feed"
     st.rerun()
 
-  if st.sidebar.button("🔒 Private Messages", use_container_width=True):
+  if st.sidebar.button(pm_button_label, use_container_width=True):
     st.session_state["nav_page"] = "Private Messages"
     st.rerun()
 
@@ -989,11 +1003,14 @@ else:
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
 
-  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT) ---
+  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT WITH AUTO-REFRESH & IMAGES) ---
   elif current_tab == "Private Messages":
     st.title(f"🔒 Secure Private Messages — {user_org}")
     st.caption("✨ Powered by TogetheSpace v0.2")
-    st.markdown("Exchange private 1-on-1 messages with members of your organization, completely hidden from others.")
+    st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
+
+    # Auto-refresh every 5 seconds so incoming messages appear instantly without manual reload
+    st_autorefresh(interval=5000, key="chat_autorefresh")
 
     df_users_all = load_users_data()
     org_members = (
@@ -1012,14 +1029,40 @@ else:
       if selected_recipient:
         st.markdown(f"### 💬 Conversation with `{selected_recipient}`")
         
-        df_pm = load_private_messages_data()
-        
+        client_client = get_gspread_client()
+        spreadsheet = client_client.open_by_key(MASTER_SHEET_ID)
+        try:
+          pm_sheet = spreadsheet.worksheet("PrivateMessages")
+        except Exception:
+          pm_sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="7")
+          pm_sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
+
+        # Mark incoming unread messages from this recipient as read
+        all_pm_records = pm_sheet.get_all_records()
+        df_pm = pd.DataFrame(all_pm_records)
         if not df_pm.empty:
-          chat_filter = df_pm[
-              (df_pm["Organization"].astype(str).str.strip() == user_org) &
+          df_pm.columns = df_pm.columns.str.strip().str.lstrip("\ufeff")
+          for idx, row in df_pm.iterrows():
+            if (
+                str(row.get("Organization", "")).strip() == user_org and
+                str(row.get("Sender", "")).strip() == selected_recipient and
+                str(row.get("Recipient", "")).strip() == current_user and
+                str(row.get("ReadStatus", "")).strip() != "Read"
+            ):
+              try:
+                pm_sheet.update_cell(idx + 2, 7, "Read")
+              except Exception:
+                pass
+
+        # Reload updated PM data
+        df_pm_refreshed = load_private_messages_data()
+        
+        if not df_pm_refreshed.empty:
+          chat_filter = df_pm_refreshed[
+              (df_pm_refreshed["Organization"].astype(str).str.strip() == user_org) &
               (
-                  ((df_pm["Sender"].astype(str).str.strip() == current_user) & (df_pm["Recipient"].astype(str).str.strip() == selected_recipient)) |
-                  ((df_pm["Sender"].astype(str).str.strip() == selected_recipient) & (df_pm["Recipient"].astype(str).str.strip() == current_user))
+                  ((df_pm_refreshed["Sender"].astype(str).str.strip() == current_user) & (df_pm_refreshed["Recipient"].astype(str).str.strip() == selected_recipient)) |
+                  ((df_pm_refreshed["Sender"].astype(str).str.strip() == selected_recipient) & (df_pm_refreshed["Recipient"].astype(str).str.strip() == current_user))
               )
           ]
         else:
@@ -1034,13 +1077,19 @@ else:
               m_sender = str(msg_row.get("Sender", "")).strip()
               m_text = str(msg_row.get("Message", "")).strip()
               m_time = str(msg_row.get("Timestamp", "")).strip()
+              m_img = str(msg_row.get("Image File ID", "")).strip()
+
+              img_tag = ""
+              if m_img and m_img != "None" and m_img != "":
+                img_tag = f"<div style='margin-top: 6px;'><img src='data:image/jpeg;base64,{m_img}' style='max-width: 100%; border-radius: 6px;'/></div>"
 
               if m_sender == current_user:
                 st.markdown(
                     f"""
                     <div style="background-color: #dcf8c6; padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; margin-left: 20%; text-align: right; border: 1px solid #c5e1a5;">
                         <span style="font-size: 11px; color: #555;">You ({m_time})</span>
-                        <div style="color: #000; font-size: 14px; margin-top: 2px;">{m_text}</div>
+                        <div style="color: #000; font-size: 14px; margin-top: 2px; white-space: pre-wrap;">{m_text}</div>
+                        {img_tag}
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1050,35 +1099,42 @@ else:
                     f"""
                     <div style="background-color: #ffffff; padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; margin-right: 20%; border: 1px solid #d0d7de;">
                         <span style="font-size: 11px; color: #555;">{m_sender} ({m_time})</span>
-                        <div style="color: #000; font-size: 14px; margin-top: 2px;">{m_text}</div>
+                        <div style="color: #000; font-size: 14px; margin-top: 2px; white-space: pre-wrap;">{m_text}</div>
+                        {img_tag}
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
+        # Message input form with image attachment
         with st.form(key="send_pm_form", clear_on_submit=True):
           new_msg = st.text_input("Type a private message...")
+          pm_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"], key="pm_img_upload")
           submit_pm = st.form_submit_button("Send Private Message")
 
           if submit_pm:
-            if new_msg.strip():
+            if new_msg.strip() or pm_image is not None:
               try:
+                img_data_str = ""
+                if pm_image is not None:
+                  img_data_str = process_image_to_base64(pm_image)
+
                 client = get_gspread_client()
                 spreadsheet = client.open_by_key(MASTER_SHEET_ID)
                 try:
                   pm_sheet = spreadsheet.worksheet("PrivateMessages")
                 except Exception:
-                  pm_sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="5")
-                  pm_sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+                  pm_sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="7")
+                  pm_sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
 
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                pm_sheet.append_row([user_org, current_user, selected_recipient, new_msg.strip(), timestamp])
+                pm_sheet.append_row([user_org, current_user, selected_recipient, new_msg.strip(), timestamp, img_data_str, "Unread"])
                 st.cache_data.clear()
                 st.rerun()
               except Exception as e:
                 st.error(f"Failed to send message: {e}")
             else:
-              st.warning("Message cannot be empty.")
+              st.warning("Please type a message or attach an image.")
 
   # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
