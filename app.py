@@ -594,7 +594,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (WITH AUTO-CREATED LIKES & COMMENTS) ---
+  # --- COMMUNITY POSTS FEED TAB (POLISHED CLEAN CARD LAYOUT) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -667,7 +667,6 @@ else:
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
 
-        # Calculate actual live likes for this post
         post_likes = (
             df_likes[df_likes["Post ID"].astype(str).str.strip() == post_id]
             if not df_likes.empty and "Post ID" in df_likes.columns
@@ -682,7 +681,6 @@ else:
             else False
         )
 
-        # Calculate actual live comments for this post
         post_comments = (
             df_comments[df_comments["Post ID"].astype(str).str.strip() == post_id]
             if not df_comments.empty and "Post ID" in df_comments.columns
@@ -692,36 +690,37 @@ else:
 
         is_saved = post_id in st.session_state["saved_posts"]
 
+        # Unified Card Container wrapping Header, Message, Image, and Actions seamlessly
         with st.container():
           st.markdown(
               f"""
-              <div style="background-color: #ffffff; padding: 16px; border-radius: 10px; border: 1px solid #e1e8ed; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                  <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                      <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
+              <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e1e8ed; margin-bottom: 24px; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+                  <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                      <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
                           {author[0].upper()}
                       </div>
                       <div>
-                          <div style="font-weight: bold; color: #0f1419; font-size: 15px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
+                          <div style="font-weight: bold; color: #0f1419; font-size: 16px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
                           <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
                       </div>
                   </div>
-              </div>
               """,
               unsafe_allow_html=True,
           )
 
           if message:
-            st.write(message)
+            st.markdown(f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 12px; line-height: 1.5;'>{message}</div>", unsafe_allow_html=True)
 
           if img_data and img_data != "None" and img_data != "":
             img_bytes = decode_base64_image(img_data)
             if img_bytes:
               st.image(img_bytes, use_container_width=True)
 
+          st.markdown("<hr style='margin: 12px 0; border: none; border-top: 1px solid #eff3f4;'>", unsafe_allow_html=True)
+
           # --- LIVE INTERACTION BUTTONS ---
           col_a, col_b, col_c, col_d = st.columns(4)
 
-          # 1. Like Button
           with col_a:
             like_label = (
                 f"❤️ {like_count} Liked"
@@ -760,7 +759,6 @@ else:
               except Exception as e:
                 st.error(f"Error updating like: {e}")
 
-          # 2. Comment Button toggle
           with col_b:
             show_comments_key = f"show_comm_{post_id}"
             if show_comments_key not in st.session_state:
@@ -773,12 +771,10 @@ else:
                   show_comments_key
               ]
 
-          # 3. Share Button
           with col_c:
             if st.button("🔄 Share", key=f"share_btn_{post_id}"):
               st.toast("🔗 Post link ready to share with team members!")
 
-          # 4. Save / Bookmark Button
           with col_d:
             save_label = "🔖 Saved" if is_saved else "🏷️ Save"
             if st.button(save_label, key=f"save_btn_{post_id}"):
@@ -793,8 +789,8 @@ else:
           # --- RENDER COMMENTS SECTION IF TOGGLED ---
           if st.session_state.get(f"show_comm_{post_id}", False):
             st.markdown(
-                "<div style='background-color: #f7f9fa; padding: 12px;"
-                " border-radius: 8px; margin-top: 8px;'>",
+                "<div style='background-color: #f7f9fa; padding: 14px;"
+                " border-radius: 8px; margin-top: 12px; border: 1px solid #e1e8ed;'>",
                 unsafe_allow_html=True,
             )
             st.markdown("**Comments Section**")
@@ -851,7 +847,8 @@ else:
 
             st.markdown("</div>", unsafe_allow_html=True)
 
-          st.markdown("---")
+          # Closing unified card div container
+          st.markdown("</div>", unsafe_allow_html=True)
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
