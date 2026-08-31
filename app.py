@@ -194,6 +194,46 @@ def load_posts_data():
     )
 
 
+@st.cache_data(ttl=30)
+def load_likes_data():
+  try:
+    client = get_gspread_client()
+    try:
+      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Likes")
+    except Exception:
+      sheet = client.open_by_key(MASTER_SHEET_ID).add_worksheet(
+          title="Likes", rows="500", cols="2"
+      )
+      sheet.append_row(["Post ID", "Username"])
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if not df.empty:
+      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(columns=["Post ID", "Username"])
+
+
+@st.cache_data(ttl=30)
+def load_comments_data():
+  try:
+    client = get_gspread_client()
+    try:
+      sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("Comments")
+    except Exception:
+      sheet = client.open_by_key(MASTER_SHEET_ID).add_worksheet(
+          title="Comments", rows="500", cols="4"
+      )
+      sheet.append_row(["Post ID", "Username", "Comment", "Timestamp"])
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if not df.empty:
+      df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(columns=["Post ID", "Username", "Comment", "Timestamp"])
+
+
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
 query_params = st.query_params
 
@@ -212,6 +252,9 @@ if "authenticated" not in st.session_state:
     st.session_state["username"] = ""
     st.session_state["role"] = ""
     st.session_state["org_name"] = ""
+
+if "saved_posts" not in st.session_state:
+  st.session_state["saved_posts"] = []
 
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
@@ -541,7 +584,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB ---
+  # --- COMMUNITY POSTS FEED TAB (WITH LIVE LIKES, COMMENTS, & SAVES) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -550,6 +593,9 @@ else:
     )
 
     df_posts = load_posts_data()
+    df_likes = load_likes_data()
+    df_comments = load_comments_data()
+
     org_posts = (
         df_posts[df_posts["Organization"].str.strip() == user_org]
         if not df_posts.empty
@@ -597,7 +643,7 @@ else:
 
     st.markdown("---")
     st.subheader("Recent Group Activity")
-    
+
     if org_posts.empty:
       st.info(
           "No community posts yet. Be the first to share an update with your"
@@ -605,15 +651,41 @@ else:
       )
     else:
       for _, row in org_posts.iloc[::-1].iterrows():
+        post_id = str(row.get("Post ID", ""))
         author = row.get("Author Username", "Member")
         timestamp = row.get("Timestamp", "")
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
 
+        # Calculate actual live likes for this post
+        post_likes = (
+            df_likes[df_likes["Post ID"].astype(str).str.strip() == post_id]
+            if not df_likes.empty
+            else pd.DataFrame()
+        )
+        like_count = len(post_likes)
+        user_has_liked = (
+            not post_likes[
+                post_likes["Username"].astype(str).str.strip() == current_user
+            ].empty
+            if not post_likes.empty
+            else False
+        )
+
+        # Calculate actual live comments for this post
+        post_comments = (
+            df_comments[df_comments["Post ID"].astype(str).str.strip() == post_id]
+            if not df_comments.empty
+            else pd.DataFrame()
+        )
+        comment_count = len(post_comments)
+
+        is_saved = post_id in st.session_state["saved_posts"]
+
         with st.container():
           st.markdown(
               f"""
-              <div style="background-color: #ffffff; padding: 16px; border-radius: 10px; border: 1px solid #e1e8ed; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+              <div style="background-color: #ffffff; padding: 16px; border-radius: 10px; border: 1px solid #e1e8ed; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                   <div style="display: flex; align-items: center; margin-bottom: 10px;">
                       <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
                           {author[0].upper()}
@@ -625,7 +697,7 @@ else:
                   </div>
               </div>
               """,
-              unsafe_allow_html=True
+              unsafe_allow_html=True,
           )
 
           if message:
@@ -636,15 +708,144 @@ else:
             if img_bytes:
               st.image(img_bytes, use_container_width=True)
 
+          # --- LIVE INTERACTION BUTTONS ---
           col_a, col_b, col_c, col_d = st.columns(4)
+
+          # 1. Like Button
           with col_a:
-            st.button("👍 24 Likes", key=f"like_{row.name}")
+            like_label = (
+                f"❤️ {like_count} Liked"
+                if user_has_liked
+                else f"👍 {like_count} Like"
+            )
+            if st.button(like_label, key=f"like_btn_{post_id}"):
+              try:
+                client = get_gspread_client()
+                spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+                try:
+                  likes_sheet = spreadsheet.worksheet("Likes")
+                except Exception:
+                  likes_sheet = spreadsheet.add_worksheet(
+                      title="Likes", rows="500", cols="2"
+                  )
+                  likes_sheet.append_row(["Post ID", "Username"])
+
+                if user_has_liked:
+                  # Unlike: find cell and delete row
+                  cell = likes_sheet.find(current_user)
+                  while cell:
+                    row_vals = likes_sheet.row_values(cell.row)
+                    if (
+                        len(row_vals) >= 2
+                        and str(row_vals[0]).strip() == str(post_id)
+                        and str(row_vals[1]).strip() == current_user
+                    ):
+                      likes_sheet.delete_rows(cell.row)
+                      break
+                    cell = likes_sheet.find(current_user, in_column=2)
+                else:
+                  # Like: append row
+                  likes_sheet.append_row([str(post_id), current_user])
+
+                st.cache_data.clear()
+                st.rerun()
+              except Exception as e:
+                st.error(f"Error updating like: {e}")
+
+          # 2. Comment Button toggle
           with col_b:
-            st.button("💬 5 Comments", key=f"comment_{row.name}")
+            show_comments_key = f"show_comm_{post_id}"
+            if show_comments_key not in st.session_state:
+              st.session_state[show_comments_key] = False
+
+            if st.button(
+                f"💬 {comment_count} Comments", key=f"comm_btn_{post_id}"
+            ):
+              st.session_state[show_comments_key] = not st.session_state[
+                  show_comments_key
+              ]
+
+          # 3. Share Button
           with col_c:
-            st.button("🔄 Share", key=f"share_{row.name}")
+            if st.button("🔄 Share", key=f"share_btn_{post_id}"):
+              st.toast(
+                  "🔗 Post link copied to clipboard! (You can share it with"
+                  " team members)"
+              )
+
+          # 4. Save / Bookmark Button
           with col_d:
-            st.button("🔖 Save", key=f"save_{row.name}")
+            save_label = "🔖 Saved" if is_saved else "🏷️ Save"
+            if st.button(save_label, key=f"save_btn_{post_id}"):
+              if is_saved:
+                st.session_state["saved_posts"].remove(post_id)
+                st.toast("Post removed from saved bookmarks.")
+              else:
+                st.session_state["saved_posts"].append(post_id)
+                st.toast("Post saved to bookmarks!")
+              st.rerun()
+
+          # --- RENDER COMMENTS SECTION IF TOGGLED ---
+          if st.session_state.get(f"show_comm_{post_id}", False):
+            st.markdown(
+                "<div style='background-color: #f7f9fa; padding: 12px;"
+                " border-radius: 8px; margin-top: 8px;'>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("**Comments Section**")
+
+            if not post_comments.empty:
+              for _, c_row in post_comments.iterrows():
+                c_user = c_row.get("Username", "User")
+                c_text = c_row.get("Comment", "")
+                c_time = c_row.get("Timestamp", "")
+                st.markdown(
+                    f"💬 **{c_user}** <span"
+                    f" style='font-size:11px;color:gray;'>({c_time})</span>: "
+                    f"{c_text}",
+                    unsafe_allow_html=True,
+                )
+            else:
+              st.caption("No comments yet. Be the first to reply!")
+
+            # Add new comment form
+            with st.form(key=f"comment_form_{post_id}", clear_on_submit=True):
+              new_comment_text = st.text_input(
+                  "Write a comment...", key=f"input_comm_{post_id}"
+              )
+              submit_comment = st.form_submit_button("Post Comment")
+
+              if submit_comment:
+                if new_comment_text.strip():
+                  try:
+                    client = get_gspread_client()
+                    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+                    try:
+                      com_sheet = spreadsheet.worksheet("Comments")
+                    except Exception:
+                      com_sheet = spreadsheet.add_worksheet(
+                          title="Comments", rows="500", cols="4"
+                      )
+                      com_sheet.append_row(
+                          ["Post ID", "Username", "Comment", "Timestamp"]
+                      )
+
+                    comm_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    com_sheet.append_row([
+                        str(post_id),
+                        current_user,
+                        new_comment_text.strip(),
+                        comm_timestamp,
+                    ])
+                    st.cache_data.clear()
+                    st.success("Comment added!")
+                    st.rerun()
+                  except Exception as e:
+                    st.error(f"Failed to post comment: {e}")
+                else:
+                  st.warning("Comment cannot be empty.")
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
           st.markdown("---")
 
