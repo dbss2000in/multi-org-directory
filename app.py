@@ -309,11 +309,18 @@ def load_private_messages_data():
 
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
+    
+    # Robust check for missing columns in existing sheets
+    expected_cols = ["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"]
     if df.empty or "Sender" not in df.columns:
       sheet.clear()
-      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
+      sheet.append_row(expected_cols)
       data = sheet.get_all_records()
       df = pd.DataFrame(data)
+    else:
+      for col in expected_cols:
+        if col not in df.columns:
+          df[col] = ""
 
     df.columns = df.columns.str.strip().str.lstrip("\ufeff")
     return df.fillna("")
@@ -450,10 +457,10 @@ else:
 
   st.sidebar.markdown("---")
 
-  # Calculate total unread private messages for badge display
+  # Calculate total unread private messages safely
   df_pm_all = load_private_messages_data()
   unread_count = 0
-  if not df_pm_all.empty and "Recipient" in df_pm_all.columns:
+  if not df_pm_all.empty and "Recipient" in df_pm_all.columns and "ReadStatus" in df_pm_all.columns:
     unread_df = df_pm_all[
         (df_pm_all["Organization"].astype(str).str.strip() == user_org) &
         (df_pm_all["Recipient"].astype(str).str.strip() == current_user) &
@@ -1009,7 +1016,6 @@ else:
     st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
 
-    # Auto-refresh every 5 seconds so incoming messages appear instantly without manual reload
     st_autorefresh(interval=5000, key="chat_autorefresh")
 
     df_users_all = load_users_data()
@@ -1037,7 +1043,6 @@ else:
           pm_sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="7")
           pm_sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
 
-        # Mark incoming unread messages from this recipient as read
         all_pm_records = pm_sheet.get_all_records()
         df_pm = pd.DataFrame(all_pm_records)
         if not df_pm.empty:
@@ -1054,10 +1059,9 @@ else:
               except Exception:
                 pass
 
-        # Reload updated PM data
         df_pm_refreshed = load_private_messages_data()
         
-        if not df_pm_refreshed.empty:
+        if not df_pm_refreshed.empty and "Sender" in df_pm_refreshed.columns:
           chat_filter = df_pm_refreshed[
               (df_pm_refreshed["Organization"].astype(str).str.strip() == user_org) &
               (
@@ -1106,7 +1110,6 @@ else:
                     unsafe_allow_html=True,
                 )
 
-        # Message input form with image attachment
         with st.form(key="send_pm_form", clear_on_submit=True):
           new_msg = st.text_input("Type a private message...")
           pm_image = st.file_uploader("Attach Image (Optional)", type=["png", "jpg", "jpeg"], key="pm_img_upload")
@@ -1360,78 +1363,4 @@ else:
       else:
         emp_usernames = org_users["Username"].astype(str).str.strip().tolist()
         with st.form("reset_emp_pass_form", clear_on_submit=True):
-          selected_user_to_reset = st.selectbox(
-              "Select Employee Username", emp_usernames
-          )
-          new_temp_pass = st.text_input(
-              "New Temporary Password", type="password"
-          )
-          submit_reset = st.form_submit_button("Reset Password")
-
-          if submit_reset:
-            if not new_temp_pass:
-              st.warning("Please enter a new password.")
-            else:
-              try:
-                client = get_gspread_client()
-                users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
-                    "Users"
-                )
-                cell = users_sheet.find(selected_user_to_reset)
-                if cell:
-                  new_hash = hash_password(new_temp_pass)
-                  users_sheet.update_cell(cell.row, 2, new_hash)
-                  st.cache_data.clear()
-                  st.success(
-                      f"Password for '{selected_user_to_reset}' has been"
-                      " successfully reset!"
-                  )
-                else:
-                  st.error("User row not found in the Google Sheet.")
-              except Exception as e:
-                st.error(f"Failed to reset password: {e}")
-
-    elif admin_sub_tab == "Remove Employee Account (Offboarding)":
-      st.subheader(f"Remove Employee Account — {user_org}")
-      st.markdown(
-          "Select an employee username to immediately revoke their access when"
-          " they leave the organization."
-      )
-
-      df_users_all = load_users_data()
-      org_users = (
-          df_users_all[
-              (df_users_all["Organization"].astype(str).str.strip() == user_org)
-              & (df_users_all["Role"].astype(str).str.strip() == "member")
-          ]
-          if not df_users_all.empty
-          else pd.DataFrame()
-      )
-
-      if org_users.empty:
-        st.info("No employee accounts found under your organization.")
-      else:
-        emp_usernames = org_users["Username"].astype(str).str.strip().tolist()
-        selected_user_to_delete = st.selectbox(
-            "Select Employee Username to Delete", emp_usernames
-        )
-
-        if st.button("Revoke & Delete Employee Account"):
-          try:
-            client = get_gspread_client()
-            users_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet(
-                "Users"
-            )
-            cell = users_sheet.find(selected_user_to_delete)
-            if cell:
-              users_sheet.delete_rows(cell.row)
-              st.cache_data.clear()
-              st.success(
-                  f"Account '{selected_user_to_delete}' has been permanently"
-                  " deleted and access revoked."
-              )
-              st.rerun()
-            else:
-              st.error("User row not found in the Google Sheet.")
-          except Exception as e:
-            st.error(f"Failed to delete account: {e}")
+          selected_user_to_reset =
