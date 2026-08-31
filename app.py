@@ -10,7 +10,7 @@ from PIL import Image
 import streamlit as st
 
 st.set_page_config(
-    page_title="Multi-Org Secure Directory v0.2", page_icon="🏢", layout="wide"
+    page_title="TogetheSpace v0.2 — Secure Multi-Org Portal", page_icon="🏢", layout="wide"
 )
 
 # --- 1. CONFIGURATION & SECURE GOOGLE DRIVE CONNECTION ---
@@ -323,7 +323,7 @@ if "nav_page" not in st.session_state:
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
-  st.title("🔐 Secure Multi-Organization Portal (v0.2)")
+  st.title("🔐 TogetheSpace v0.2 Portal Login")
   st.markdown("Please log in using your assigned organizational credentials.")
 
   with st.form("login_form"):
@@ -376,9 +376,9 @@ else:
     df_org = pd.DataFrame()
 
   st.sidebar.title(f"🏢 {user_org}")
-  st.sidebar.caption("v0.2 Enterprise Edition")
   st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
+  st.sidebar.markdown(f"**App Version:** `v0.2`")
 
   # --- SIDEBAR: CHANGE PASSWORD FEATURE ---
   with st.sidebar.expander("🔐 Change Password"):
@@ -424,7 +424,7 @@ else:
 
   st.sidebar.markdown("---")
 
-  # --- SIDEBAR PUSH BUTTON NAVIGATION ---
+  # --- PUSH BUTTON NAVIGATION MENU ---
   st.sidebar.markdown("### 🧭 Navigation Menu")
 
   if st.sidebar.button("📇 Member Directory", use_container_width=True):
@@ -461,7 +461,7 @@ else:
 
   # --- DIRECTORY TAB (READ-ONLY) ---
   if current_tab == "Directory":
-    st.title(f"📇 {user_org} - Member Directory & SOS (v0.2)")
+    st.title(f"📇 {user_org} - Member Directory & SOS")
 
     search_query = st.sidebar.text_input("Search Directory (Name or Notes)")
     filtered_df = df_org.copy()
@@ -589,7 +589,7 @@ else:
 
   # --- NOTICE BOARD TAB ---
   elif current_tab == "Notice Board":
-    st.title(f"📢 Official Notices — {user_org} (v0.2)")
+    st.title(f"📢 Official Notices — {user_org}")
     st.markdown(
         "View official announcements and updates issued by your organization's"
         " management."
@@ -672,7 +672,7 @@ else:
 
   # --- COMMUNITY POSTS FEED TAB ---
   elif current_tab == "Community Feed":
-    st.title(f"💬 Community Discussion Feed — {user_org} (v0.2)")
+    st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
         "Share updates, messages, or notes with other members of your"
         " organization."
@@ -688,10 +688,11 @@ else:
         else pd.DataFrame()
     )
 
+    # Crisp, Smart, Colorful Compact Post Box
     st.markdown(
         """
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team (v0.2)</h4>
+            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team</h4>
         </div>
         """,
         unsafe_allow_html=True,
@@ -810,6 +811,7 @@ else:
             unsafe_allow_html=True,
         )
 
+        # Moderation delete button for managers or authors
         if current_role == "manager" or current_user == author:
           del_col1, del_col2, del_col3, del_col4 = st.columns([1, 1, 1, 1])
           with del_col4:
@@ -961,7 +963,7 @@ else:
 
   # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
-    st.title(f"🌟 Locality Attractions, Business & Events Bulletin (v0.2)")
+    st.title(f"🌟 Locality Attractions, Business & Events Bulletin")
     st.markdown(
         "Daily localized updates, attractions, businesses, facilities, and events indexed by category and updated twice daily (Morning & Afternoon)."
     )
@@ -1062,7 +1064,7 @@ else:
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
-    st.title("🛠️ Manager Administrative Portal (v0.2)")
+    st.title("🛠️ Manager Administrative Portal")
     st.markdown(
         "Manage member directory records, create accounts, reset passwords, and"
         f" offboard staff for **{user_org}**."
