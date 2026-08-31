@@ -594,7 +594,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (FULLY UNIFIED CARD LAYOUT) ---
+  # --- COMMUNITY POSTS FEED TAB (ALTERNATING PASTEL COLORS & FULL BORDERS) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -660,12 +660,18 @@ else:
           " team!"
       )
     else:
-      for _, row in org_posts.iloc[::-1].iterrows():
+      # Faint pastel color cycle for cards: Light Blue, Light Pink, Mint Green, Pale Peach, Lavender
+      pastel_colors = ["#f0f8ff", "#fff0f5", "#f0fff0", "#fffaf0", "#f8f0ff"]
+
+      for idx, (_, row) in enumerate(org_posts.iloc[::-1].iterrows()):
         post_id = str(row.get("Post ID", ""))
         author = row.get("Author Username", "Member")
         timestamp = row.get("Timestamp", "")
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
+
+        # Pick alternating pastel background color
+        card_bg = pastel_colors[idx % len(pastel_colors)]
 
         post_likes = (
             df_likes[df_likes["Post ID"].astype(str).str.strip() == post_id]
@@ -690,13 +696,13 @@ else:
 
         is_saved = post_id in st.session_state["saved_posts"]
 
-        # Render the entire post card cleanly using a unified HTML container wrapper
+        # Card container with full border on all 4 sides and alternating soft pastel tint
         msg_html = f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap;'>{message}</div>" if message else ""
-        
+
         st.markdown(
             f"""
-            <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e1e8ed; margin-bottom: 24px; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
-                <div style="display: flex; align-items: center; margin-bottom: 12px;">
+            <div style="background-color: {card_bg}; padding: 22px; border-radius: 12px; border: 1.5px solid #d0d7de; margin-bottom: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                <div style="display: flex; align-items: center; margin-bottom: 14px;">
                     <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
                         {author[0].upper()}
                     </div>
@@ -706,12 +712,10 @@ else:
                     </div>
                 </div>
                 {msg_html}
-            </div>
             """,
             unsafe_allow_html=True,
         )
 
-        # Image rendering right inside or alongside
         if img_data and img_data != "None" and img_data != "":
           img_bytes = decode_base64_image(img_data)
           if img_bytes:
@@ -788,8 +792,8 @@ else:
         # --- RENDER COMMENTS SECTION IF TOGGLED ---
         if st.session_state.get(f"show_comm_{post_id}", False):
           st.markdown(
-              "<div style='background-color: #f7f9fa; padding: 14px;"
-              " border-radius: 8px; margin-top: 12px; margin-bottom: 12px; border: 1px solid #e1e8ed;'>",
+              "<div style='background-color: #ffffff; padding: 14px;"
+              " border-radius: 8px; margin-top: 12px; margin-bottom: 12px; border: 1px solid #d0d7de;'>",
               unsafe_allow_html=True,
           )
           st.markdown("**Comments Section**")
@@ -846,7 +850,8 @@ else:
 
           st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
+        # Closing container div for pastel card box
+        st.markdown("</div>", unsafe_allow_html=True)
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
