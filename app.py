@@ -537,11 +537,11 @@ else:
           if img_data and img_data != "None" and img_data != "":
             img_bytes = decode_base64_image(img_data)
             if img_bytes:
-              st.image(img_bytes, caption="Notice Attachment", width=500)
+              st.image(img_bytes, caption="Notice Attachment", use_container_width=True)
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (UPGRADED SOCIAL CARD LAYOUT) ---
+  # --- COMMUNITY POSTS FEED TAB ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -610,7 +610,6 @@ else:
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
 
-        # Upgraded Social Media Card Container Style
         with st.container():
           st.markdown(
               f"""
@@ -629,17 +628,14 @@ else:
               unsafe_allow_html=True
           )
 
-          # Post Message Text
           if message:
             st.write(message)
 
-          # Post Image Attachment (Full width card media render)
           if img_data and img_data != "None" and img_data != "":
             img_bytes = decode_base64_image(img_data)
             if img_bytes:
-              st.image(img_bytes, use_column_width=True)
+              st.image(img_bytes, use_container_width=True)
 
-          # Interactive Social Action Bar (Like, Comment, Share, Bookmark)
           col_a, col_b, col_c, col_d = st.columns(4)
           with col_a:
             st.button("👍 24 Likes", key=f"like_{row.name}")
