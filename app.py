@@ -594,7 +594,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB (POLISHED CLEAN CARD LAYOUT) ---
+  # --- COMMUNITY POSTS FEED TAB (FULLY UNIFIED CARD LAYOUT) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -690,165 +690,163 @@ else:
 
         is_saved = post_id in st.session_state["saved_posts"]
 
-        # Unified Card Container wrapping Header, Message, Image, and Actions seamlessly
-        with st.container():
+        # Render the entire post card cleanly using a unified HTML container wrapper
+        msg_html = f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 14px; line-height: 1.5; white-space: pre-wrap;'>{message}</div>" if message else ""
+        
+        st.markdown(
+            f"""
+            <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e1e8ed; margin-bottom: 24px; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
+                <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                    <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
+                        {author[0].upper()}
+                    </div>
+                    <div>
+                        <div style="font-weight: bold; color: #0f1419; font-size: 16px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
+                        <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
+                    </div>
+                </div>
+                {msg_html}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Image rendering right inside or alongside
+        if img_data and img_data != "None" and img_data != "":
+          img_bytes = decode_base64_image(img_data)
+          if img_bytes:
+            st.image(img_bytes, use_container_width=True)
+
+        # --- LIVE INTERACTION BUTTONS ---
+        col_a, col_b, col_c, col_d = st.columns(4)
+
+        with col_a:
+          like_label = (
+              f"❤️ {like_count} Liked"
+              if user_has_liked
+              else f"👍 {like_count} Like"
+          )
+          if st.button(like_label, key=f"like_btn_{post_id}"):
+            try:
+              client = get_gspread_client()
+              spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+              try:
+                likes_sheet = spreadsheet.worksheet("Likes")
+              except Exception:
+                likes_sheet = spreadsheet.add_worksheet(
+                    title="Likes", rows="500", cols="2"
+                )
+                likes_sheet.append_row(["Post ID", "Username"])
+
+              if user_has_liked:
+                cell = likes_sheet.find(current_user)
+                while cell:
+                  row_vals = likes_sheet.row_values(cell.row)
+                  if (
+                      len(row_vals) >= 2
+                      and str(row_vals[0]).strip() == str(post_id)
+                      and str(row_vals[1]).strip() == current_user
+                  ):
+                    likes_sheet.delete_rows(cell.row)
+                    break
+                  cell = likes_sheet.find(current_user, in_column=2)
+              else:
+                likes_sheet.append_row([str(post_id), current_user])
+
+              st.cache_data.clear()
+              st.rerun()
+            except Exception as e:
+              st.error(f"Error updating like: {e}")
+
+        with col_b:
+          show_comments_key = f"show_comm_{post_id}"
+          if show_comments_key not in st.session_state:
+            st.session_state[show_comments_key] = False
+
+          if st.button(
+              f"💬 {comment_count} Comments", key=f"comm_btn_{post_id}"
+          ):
+            st.session_state[show_comments_key] = not st.session_state[
+                show_comments_key
+            ]
+
+        with col_c:
+          if st.button("🔄 Share", key=f"share_btn_{post_id}"):
+            st.toast("🔗 Post link ready to share with team members!")
+
+        with col_d:
+          save_label = "🔖 Saved" if is_saved else "🏷️ Save"
+          if st.button(save_label, key=f"save_btn_{post_id}"):
+            if is_saved:
+              st.session_state["saved_posts"].remove(post_id)
+              st.toast("Post removed from saved bookmarks.")
+            else:
+              st.session_state["saved_posts"].append(post_id)
+              st.toast("Post saved to bookmarks!")
+            st.rerun()
+
+        # --- RENDER COMMENTS SECTION IF TOGGLED ---
+        if st.session_state.get(f"show_comm_{post_id}", False):
           st.markdown(
-              f"""
-              <div style="background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e1e8ed; margin-bottom: 24px; box-shadow: 0 2px 5px rgba(0,0,0,0.04);">
-                  <div style="display: flex; align-items: center; margin-bottom: 12px;">
-                      <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
-                          {author[0].upper()}
-                      </div>
-                      <div>
-                          <div style="font-weight: bold; color: #0f1419; font-size: 16px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
-                          <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
-                      </div>
-                  </div>
-              """,
+              "<div style='background-color: #f7f9fa; padding: 14px;"
+              " border-radius: 8px; margin-top: 12px; margin-bottom: 12px; border: 1px solid #e1e8ed;'>",
               unsafe_allow_html=True,
           )
+          st.markdown("**Comments Section**")
 
-          if message:
-            st.markdown(f"<div style='font-size: 15px; color: #0f1419; margin-bottom: 12px; line-height: 1.5;'>{message}</div>", unsafe_allow_html=True)
-
-          if img_data and img_data != "None" and img_data != "":
-            img_bytes = decode_base64_image(img_data)
-            if img_bytes:
-              st.image(img_bytes, use_container_width=True)
-
-          st.markdown("<hr style='margin: 12px 0; border: none; border-top: 1px solid #eff3f4;'>", unsafe_allow_html=True)
-
-          # --- LIVE INTERACTION BUTTONS ---
-          col_a, col_b, col_c, col_d = st.columns(4)
-
-          with col_a:
-            like_label = (
-                f"❤️ {like_count} Liked"
-                if user_has_liked
-                else f"👍 {like_count} Like"
-            )
-            if st.button(like_label, key=f"like_btn_{post_id}"):
-              try:
-                client = get_gspread_client()
-                spreadsheet = client.open_by_key(MASTER_SHEET_ID)
-                try:
-                  likes_sheet = spreadsheet.worksheet("Likes")
-                except Exception:
-                  likes_sheet = spreadsheet.add_worksheet(
-                      title="Likes", rows="500", cols="2"
-                  )
-                  likes_sheet.append_row(["Post ID", "Username"])
-
-                if user_has_liked:
-                  cell = likes_sheet.find(current_user)
-                  while cell:
-                    row_vals = likes_sheet.row_values(cell.row)
-                    if (
-                        len(row_vals) >= 2
-                        and str(row_vals[0]).strip() == str(post_id)
-                        and str(row_vals[1]).strip() == current_user
-                    ):
-                      likes_sheet.delete_rows(cell.row)
-                      break
-                    cell = likes_sheet.find(current_user, in_column=2)
-                else:
-                  likes_sheet.append_row([str(post_id), current_user])
-
-                st.cache_data.clear()
-                st.rerun()
-              except Exception as e:
-                st.error(f"Error updating like: {e}")
-
-          with col_b:
-            show_comments_key = f"show_comm_{post_id}"
-            if show_comments_key not in st.session_state:
-              st.session_state[show_comments_key] = False
-
-            if st.button(
-                f"💬 {comment_count} Comments", key=f"comm_btn_{post_id}"
-            ):
-              st.session_state[show_comments_key] = not st.session_state[
-                  show_comments_key
-              ]
-
-          with col_c:
-            if st.button("🔄 Share", key=f"share_btn_{post_id}"):
-              st.toast("🔗 Post link ready to share with team members!")
-
-          with col_d:
-            save_label = "🔖 Saved" if is_saved else "🏷️ Save"
-            if st.button(save_label, key=f"save_btn_{post_id}"):
-              if is_saved:
-                st.session_state["saved_posts"].remove(post_id)
-                st.toast("Post removed from saved bookmarks.")
-              else:
-                st.session_state["saved_posts"].append(post_id)
-                st.toast("Post saved to bookmarks!")
-              st.rerun()
-
-          # --- RENDER COMMENTS SECTION IF TOGGLED ---
-          if st.session_state.get(f"show_comm_{post_id}", False):
-            st.markdown(
-                "<div style='background-color: #f7f9fa; padding: 14px;"
-                " border-radius: 8px; margin-top: 12px; border: 1px solid #e1e8ed;'>",
-                unsafe_allow_html=True,
-            )
-            st.markdown("**Comments Section**")
-
-            if not post_comments.empty:
-              for _, c_row in post_comments.iterrows():
-                c_user = c_row.get("Username", "User")
-                c_text = c_row.get("Comment", "")
-                c_time = c_row.get("Timestamp", "")
-                st.markdown(
-                    f"💬 **{c_user}** <span"
-                    f" style='font-size:11px;color:gray;'>({c_time})</span>: "
-                    f"{c_text}",
-                    unsafe_allow_html=True,
-                )
-            else:
-              st.caption("No comments yet. Be the first to reply!")
-
-            with st.form(key=f"comment_form_{post_id}", clear_on_submit=True):
-              new_comment_text = st.text_input(
-                  "Write a comment...", key=f"input_comm_{post_id}"
+          if not post_comments.empty:
+            for _, c_row in post_comments.iterrows():
+              c_user = c_row.get("Username", "User")
+              c_text = c_row.get("Comment", "")
+              c_time = c_row.get("Timestamp", "")
+              st.markdown(
+                  f"💬 **{c_user}** <span"
+                  f" style='font-size:11px;color:gray;'>({c_time})</span>: "
+                  f"{c_text}",
+                  unsafe_allow_html=True,
               )
-              submit_comment = st.form_submit_button("Post Comment")
+          else:
+            st.caption("No comments yet. Be the first to reply!")
 
-              if submit_comment:
-                if new_comment_text.strip():
+          with st.form(key=f"comment_form_{post_id}", clear_on_submit=True):
+            new_comment_text = st.text_input(
+                "Write a comment...", key=f"input_comm_{post_id}"
+            )
+            submit_comment = st.form_submit_button("Post Comment")
+
+            if submit_comment:
+              if new_comment_text.strip():
+                try:
+                  client = get_gspread_client()
+                  spreadsheet = client.open_by_key(MASTER_SHEET_ID)
                   try:
-                    client = get_gspread_client()
-                    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
-                    try:
-                      com_sheet = spreadsheet.worksheet("Comments")
-                    except Exception:
-                      com_sheet = spreadsheet.add_worksheet(
-                          title="Comments", rows="500", cols="4"
-                      )
-                      com_sheet.append_row(
-                          ["Post ID", "Username", "Comment", "Timestamp"]
-                      )
+                    com_sheet = spreadsheet.worksheet("Comments")
+                  except Exception:
+                    com_sheet = spreadsheet.add_worksheet(
+                        title="Comments", rows="500", cols="4"
+                    )
+                    com_sheet.append_row(
+                        ["Post ID", "Username", "Comment", "Timestamp"]
+                    )
 
-                    comm_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    com_sheet.append_row([
-                        str(post_id),
-                        current_user,
-                        new_comment_text.strip(),
-                        comm_timestamp,
-                    ])
-                    st.cache_data.clear()
-                    st.success("Comment added!")
-                    st.rerun()
-                  except Exception as e:
-                    st.error(f"Failed to post comment: {e}")
-                else:
-                  st.warning("Comment cannot be empty.")
+                  comm_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  com_sheet.append_row([
+                      str(post_id),
+                      current_user,
+                      new_comment_text.strip(),
+                      comm_timestamp,
+                  ])
+                  st.cache_data.clear()
+                  st.success("Comment added!")
+                  st.rerun()
+                except Exception as e:
+                  st.error(f"Failed to post comment: {e}")
+              else:
+                st.warning("Comment cannot be empty.")
 
-            st.markdown("</div>", unsafe_allow_html=True)
-
-          # Closing unified card div container
           st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
