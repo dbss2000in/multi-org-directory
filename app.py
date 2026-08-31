@@ -295,6 +295,31 @@ def load_locality_data():
     )
 
 
+@st.cache_data(ttl=30)
+def load_private_messages_data():
+  try:
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+    try:
+      sheet = spreadsheet.worksheet("PrivateMessages")
+    except Exception:
+      sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="5")
+      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if df.empty or "Sender" not in df.columns:
+      sheet.clear()
+      sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(columns=["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+
+
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
 query_params = st.query_params
 
@@ -437,6 +462,10 @@ else:
 
   if st.sidebar.button("💬 Community Feed", use_container_width=True):
     st.session_state["nav_page"] = "Community Feed"
+    st.rerun()
+
+  if st.sidebar.button("🔒 Private Messages", use_container_width=True):
+    st.session_state["nav_page"] = "Private Messages"
     st.rerun()
 
   if st.sidebar.button("🌟 Locality Attractions & Events", use_container_width=True):
@@ -959,6 +988,97 @@ else:
           st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
+
+  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT) ---
+  elif current_tab == "Private Messages":
+    st.title(f"🔒 Secure Private Messages — {user_org}")
+    st.caption("✨ Powered by TogetheSpace v0.2")
+    st.markdown("Exchange private 1-on-1 messages with members of your organization, completely hidden from others.")
+
+    df_users_all = load_users_data()
+    org_members = (
+        df_users_all[df_users_all["Organization"].astype(str).str.strip() == user_org]["Username"].astype(str).str.strip().tolist()
+        if not df_users_all.empty
+        else []
+    )
+    if current_user in org_members:
+      org_members.remove(current_user)
+
+    if not org_members:
+      st.info("No other members found in your organization to chat with.")
+    else:
+      selected_recipient = st.selectbox("Select Team Member to Chat With", org_members)
+
+      if selected_recipient:
+        st.markdown(f"### 💬 Conversation with `{selected_recipient}`")
+        
+        df_pm = load_private_messages_data()
+        
+        if not df_pm.empty:
+          chat_filter = df_pm[
+              (df_pm["Organization"].astype(str).str.strip() == user_org) &
+              (
+                  ((df_pm["Sender"].astype(str).str.strip() == current_user) & (df_pm["Recipient"].astype(str).str.strip() == selected_recipient)) |
+                  ((df_pm["Sender"].astype(str).str.strip() == selected_recipient) & (df_pm["Recipient"].astype(str).str.strip() == current_user))
+              )
+          ]
+        else:
+          chat_filter = pd.DataFrame()
+
+        chat_container = st.container()
+        with chat_container:
+          if chat_filter.empty:
+            st.info("No messages yet. Start the conversation below!")
+          else:
+            for _, msg_row in chat_filter.iterrows():
+              m_sender = str(msg_row.get("Sender", "")).strip()
+              m_text = str(msg_row.get("Message", "")).strip()
+              m_time = str(msg_row.get("Timestamp", "")).strip()
+
+              if m_sender == current_user:
+                st.markdown(
+                    f"""
+                    <div style="background-color: #dcf8c6; padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; margin-left: 20%; text-align: right; border: 1px solid #c5e1a5;">
+                        <span style="font-size: 11px; color: #555;">You ({m_time})</span>
+                        <div style="color: #000; font-size: 14px; margin-top: 2px;">{m_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+              else:
+                st.markdown(
+                    f"""
+                    <div style="background-color: #ffffff; padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; margin-right: 20%; border: 1px solid #d0d7de;">
+                        <span style="font-size: 11px; color: #555;">{m_sender} ({m_time})</span>
+                        <div style="color: #000; font-size: 14px; margin-top: 2px;">{m_text}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        with st.form(key="send_pm_form", clear_on_submit=True):
+          new_msg = st.text_input("Type a private message...")
+          submit_pm = st.form_submit_button("Send Private Message")
+
+          if submit_pm:
+            if new_msg.strip():
+              try:
+                client = get_gspread_client()
+                spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+                try:
+                  pm_sheet = spreadsheet.worksheet("PrivateMessages")
+                except Exception:
+                  pm_sheet = spreadsheet.add_worksheet(title="PrivateMessages", rows="500", cols="5")
+                  pm_sheet.append_row(["Organization", "Sender", "Recipient", "Message", "Timestamp"])
+
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                pm_sheet.append_row([user_org, current_user, selected_recipient, new_msg.strip(), timestamp])
+                st.cache_data.clear()
+                st.rerun()
+              except Exception as e:
+                st.error(f"Failed to send message: {e}")
+            else:
+              st.warning("Message cannot be empty.")
 
   # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
