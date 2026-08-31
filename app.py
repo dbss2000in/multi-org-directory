@@ -361,11 +361,9 @@ else:
         notes = row.get("Notes", "")
 
         with st.expander(f"👤 {name}  |  🏢 {org_name}  |  🩸 Blood Group: {blood}"):
-          # Display Bio if available
           if bio_text and bio_text != "None":
             st.info(f"**Bio:** {bio_text}")
 
-          # Display Profile Meta (Role, Birthday, Timezone, Notes)
           meta_cols = st.columns(4)
           with meta_cols[0]:
             st.markdown(f"**Role:** `{str(member_role).capitalize()}`")
@@ -391,7 +389,6 @@ else:
             else:
               st.markdown("**Address:** None")
 
-            # Phone & SMS
             phone = str(row.get("Phone Number", ""))
             if phone and phone != "None":
               st.markdown(f"**Phone / Call:** [{phone}](tel:{phone})")
@@ -399,7 +396,6 @@ else:
             else:
               st.markdown("**Phone:** None")
 
-            # WhatsApp Chat
             wa_chat = str(row.get("WhatsApp Chat", ""))
             if wa_chat and wa_chat != "None":
               if wa_chat.startswith("http"):
@@ -411,41 +407,35 @@ else:
             else:
               st.markdown("**WhatsApp Chat:** None")
 
-            # WhatsApp Call
             wa_call = str(row.get("WhatsApp Call", "")).strip()
             if wa_call and wa_call != "None":
               wa_call_digits = "".join(filter(str.isdigit, wa_call))
               st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
 
-            # Facebook
             fb_link = str(row.get("Facebook", "")).strip()
             if fb_link and fb_link != "None":
               if not fb_link.startswith("http"):
                 fb_link = f"https://{fb_link}"
               st.markdown(f"**Facebook:** [Open Profile]({fb_link})")
 
-            # Instagram
             insta_link = str(row.get("Instagram", "")).strip()
             if insta_link and insta_link != "None":
               if not insta_link.startswith("http"):
                 insta_link = f"https://instagram.com/{insta_link.replace('@', '')}"
               st.markdown(f"**Instagram:** [Open Profile]({insta_link})")
 
-            # X (Twitter) Account
             x_link = str(row.get("Twitter", "")).strip()
             if x_link and x_link != "None":
               if not x_link.startswith("http"):
                 x_link = f"https://twitter.com/{x_link.replace('@', '')}"
               st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
 
-            # Website
             web_link = str(row.get("Website", "")).strip()
             if web_link and web_link != "None":
               if not web_link.startswith("http"):
                 web_link = f"https://{web_link}"
               st.markdown(f"**Website:** [Visit Website]({web_link})")
 
-            # Email
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
@@ -551,7 +541,7 @@ else:
 
           st.markdown("---")
 
-  # --- COMMUNITY POSTS FEED TAB ---
+  # --- COMMUNITY POSTS FEED TAB (UPGRADED SOCIAL CARD LAYOUT) ---
   elif current_tab == "💬 Community Feed":
     st.title(f"💬 Community Discussion Feed — {user_org}")
     st.markdown(
@@ -607,6 +597,7 @@ else:
 
     st.markdown("---")
     st.subheader("Recent Group Activity")
+    
     if org_posts.empty:
       st.info(
           "No community posts yet. Be the first to share an update with your"
@@ -619,14 +610,47 @@ else:
         message = row.get("Message", "")
         img_data = str(row.get("Image File ID", "")).strip()
 
-        with st.chat_message("user"):
-          st.markdown(f"**{author}**  *({timestamp})*")
+        # Upgraded Social Media Card Container Style
+        with st.container():
+          st.markdown(
+              f"""
+              <div style="background-color: #ffffff; padding: 16px; border-radius: 10px; border: 1px solid #e1e8ed; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                      <div style="background-color: #1da1f2; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 12px;">
+                          {author[0].upper()}
+                      </div>
+                      <div>
+                          <div style="font-weight: bold; color: #0f1419; font-size: 15px;">{author} <span style="font-weight: normal; color: #536471; font-size: 13px;">({user_org})</span></div>
+                          <div style="color: #536471; font-size: 12px;">🕒 {timestamp}</div>
+                      </div>
+                  </div>
+              </div>
+              """,
+              unsafe_allow_html=True
+          )
+
+          # Post Message Text
           if message:
             st.write(message)
+
+          # Post Image Attachment (Full width card media render)
           if img_data and img_data != "None" and img_data != "":
             img_bytes = decode_base64_image(img_data)
             if img_bytes:
-              st.image(img_bytes, width=400)
+              st.image(img_bytes, use_column_width=True)
+
+          # Interactive Social Action Bar (Like, Comment, Share, Bookmark)
+          col_a, col_b, col_c, col_d = st.columns(4)
+          with col_a:
+            st.button("👍 24 Likes", key=f"like_{row.name}")
+          with col_b:
+            st.button("💬 5 Comments", key=f"comment_{row.name}")
+          with col_c:
+            st.button("🔄 Share", key=f"share_{row.name}")
+          with col_d:
+            st.button("🔖 Save", key=f"save_{row.name}")
+
+          st.markdown("---")
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
