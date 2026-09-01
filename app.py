@@ -1,6 +1,6 @@
 import base64
 import datetime
-from datetime import datetime
+from datetime import datetime, date
 import hashlib
 import io
 import gspread
@@ -91,25 +91,29 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- HELPER FOR DOB (STRICTLY STRIPPING YEAR & SHOWING ONLY MONTH & DAY) ---
-def format_dob(dob_str):
-  dob_str = str(dob_str).strip()
-  if not dob_str or dob_str.lower() == "none":
+# --- HELPER FOR DOB (GUARANTEED YEAR REMOVAL) ---
+def format_dob(dob_val):
+  if not dob_val or str(dob_val).strip().lower() in ["none", ""]:
     return ""
   
-  # Check standard date formats including full years
-  for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y", "%Y.%m.%d", "%d.%m.%Y"):
+  # If Pandas/Python already treated it as a timestamp or datetime object
+  if isinstance(dob_val, (datetime, pd.Timestamp, date)):
+    try:
+      return dob_val.strftime("%B %d")
+    except Exception:
+      pass
+
+  dob_str = str(dob_val).strip()
+  
+  # Clean up timestamp strings if Google Sheets exports them like '1985-08-24 00:00:00'
+  if " " in dob_str:
+    dob_str = dob_str.split(" ")[0]
+
+  # Try parsing across various standard date layouts
+  for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y", "%Y.%m.%d", "%d.%m.%Y", "%m-%d", "%m/%d"):
     try:
       dt = datetime.strptime(dob_str, fmt)
-      return dt.strftime("%B %d")  # Extracts Month and Day (e.g., "October 12")
-    except ValueError:
-      continue
-      
-  # Check formats without years
-  for fmt in ("%m-%d", "%m/%d", "%B %d", "%d %B", "%b %d", "%d %b"):
-    try:
-      dt = datetime.strptime(dob_str, fmt)
-      return dt.strftime("%B %d")
+      return dt.strftime("%B %d")  # Strictly outputs only Month and Day (e.g. "August 24")
     except ValueError:
       continue
       
@@ -649,7 +653,6 @@ else:
           with col1:
             st.subheader("📞 Communication Details")
             
-            # Address Map Link
             raw_address = str(row.get("Address", "None"))
             if raw_address and raw_address != "None":
               maps_url = f"https://www.google.com/maps/search/?api=1&query={raw_address.replace(' ', '+')}"
@@ -657,7 +660,6 @@ else:
             else:
               st.markdown("**Address:** None")
 
-            # Phone & SMS Links
             phone = str(row.get("Phone Number", ""))
             if phone and phone != "None":
               st.markdown(f"**Phone / Call:** [{phone}](tel:{phone})")
@@ -665,7 +667,6 @@ else:
             else:
               st.markdown("**Phone:** None")
 
-            # WhatsApp Chat Link
             wa_chat = str(row.get("WhatsApp Chat", ""))
             if wa_chat and wa_chat != "None":
               if wa_chat.startswith("http"):
@@ -677,13 +678,11 @@ else:
             else:
               st.markdown("**WhatsApp Chat:** None")
 
-            # WhatsApp Call Link
             wa_call = str(row.get("WhatsApp Call", "")).strip()
             if wa_call and wa_call != "None":
               wa_call_digits = "".join(filter(str.isdigit, wa_call))
               st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
 
-            # Facebook Profile Link
             fb_link = str(row.get("Facebook", "")).strip()
             if fb_link and fb_link != "None":
               if not fb_link.startswith("http"):
@@ -692,7 +691,6 @@ else:
             else:
               st.markdown("**Facebook:** None")
 
-            # Instagram Profile Link
             insta_link = str(row.get("Instagram", "")).strip()
             if insta_link and insta_link != "None":
               if not insta_link.startswith("http"):
@@ -701,16 +699,14 @@ else:
             else:
               st.markdown("**Instagram:** None")
 
-            # Twitter / X Profile Link
             x_link = str(row.get("Twitter", "")).strip()
             if x_link and x_link != "None":
               if not x_link.startswith("http"):
-                x_link = f"https://twitter.com/{x_link.replace('@', '')}"
+                x_link = f"https://{x_link.replace('@', '')}"
               st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
             else:
               st.markdown("**X (Twitter):** None")
 
-            # Website Link
             web_link = str(row.get("Website", "")).strip()
             if web_link and web_link != "None":
               if not web_link.startswith("http"):
@@ -719,7 +715,6 @@ else:
             else:
               st.markdown("**Website:** None")
 
-            # Email Link
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
