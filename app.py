@@ -10,7 +10,7 @@ from PIL import Image
 import streamlit as st
 
 st.set_page_config(
-    page_title="TogetheSpace v0.2 — Community Hub", page_icon="🏙️", layout="wide"
+    page_title="TogetheSpace v0.3 — Community Hub", page_icon="🏙️", layout="wide"
 )
 
 # --- APP-WIDE STYLING & GORGEOUS UI/UX ---
@@ -234,6 +234,7 @@ def load_comments_data():
     return pd.DataFrame(columns=["Post ID", "Username", "Comment", "Timestamp"])
 
 
+@st.cache_data(ttl=30)
 def load_private_messages_data():
   try:
     client = get_gspread_client()
@@ -344,6 +345,30 @@ def load_safety_data():
     return pd.DataFrame(columns=["Alert ID", "Organization", "Author", "Severity", "Message"])
 
 
+@st.cache_data(ttl=30)
+def load_polls_data():
+  try:
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+    try:
+      sheet = spreadsheet.worksheet("CommunityPolls")
+    except Exception:
+      sheet = spreadsheet.add_worksheet(title="CommunityPolls", rows="100", cols="4")
+      sheet.append_row(["Poll ID", "Organization", "Question", "Options"])
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if df.empty or "Poll ID" not in df.columns:
+      sheet.clear()
+      sheet.append_row(["Poll ID", "Organization", "Question", "Options"])
+      # Seed a default poll
+      sheet.append_row(["1", "St. Xavier Enclave", "Should we organize the upcoming Annual Winter Gala in the Community Clubhouse lawn?", "Yes, absolutely! 🎉|No, let's keep it indoors 🏢|Neutral / Undecided 🤷‍♂️"])
+      df = pd.DataFrame(sheet.get_all_records())
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(columns=["Poll ID", "Organization", "Question", "Options"])
+
+
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
 query_params = st.query_params
 
@@ -371,7 +396,7 @@ if not st.session_state["authenticated"]:
   st.markdown(
       """
       <div style="text-align: center; padding: 40px 20px;">
-          <h1 style="color: #0d9488; font-weight: 700;">🏙️ TogetheSpace v0.2</h1>
+          <h1 style="color: #0d9488; font-weight: 700;">🏙️ TogetheSpace v0.3</h1>
           <h3 style="color: #64748b; font-weight: 400;">Smart Community Hub & Resident Portal</h3>
       </div>
       """,
@@ -428,7 +453,7 @@ else:
     df_org = pd.DataFrame()
 
   st.sidebar.markdown(f"<h3 style='color: #0d9488;'>🏘️ {user_org}</h3>", unsafe_allow_html=True)
-  st.sidebar.caption("✨ TogetheSpace Community")
+  st.sidebar.caption("✨ TogetheSpace v0.3 Community")
   st.sidebar.markdown(f"**Resident:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
 
@@ -523,7 +548,7 @@ else:
     st.rerun()
 
   if current_role == "manager":
-    if st.sidebar.button("🛠️ Committee Admin Portal", use_container_width=True):
+    if st.sidebar.button("🛠️ Community Admin Portal", use_container_width=True):
       st.session_state["nav_page"] = "Manager Admin Portal"
       st.rerun()
 
@@ -665,7 +690,7 @@ else:
       org_notices = df_notices[df_notices["Organization"].str.strip() == user_org] if not df_notices.empty else pd.DataFrame()
 
       if current_role == "manager":
-        with st.expander("➕ Publish Community Notice (Committee Only)", expanded=False):
+        with st.expander("➕ Publish Community Notice (Community Admin Only)", expanded=False):
           with st.form("notice_form", clear_on_submit=True):
             notice_title = st.text_input("Notice Title")
             notice_content = st.text_area("Notice Details")
@@ -695,7 +720,7 @@ else:
         for _, row in org_notices.iloc[::-1].iterrows():
           with st.container():
             st.subheader(f"📌 {row.get('Title', 'Notice')}")
-            st.caption(f"Posted: {row.get('Date Posted', 'Recent')} | Committee Announcement")
+            st.caption(f"Posted: {row.get('Date Posted', 'Recent')} | Community Administration")
             st.write(row.get("Content", ""))
             img_data = str(row.get("Image File ID", "")).strip()
             if img_data and img_data != "None":
@@ -1137,33 +1162,35 @@ else:
             unsafe_allow_html=True,
         )
 
-  # --- 7. COMMUNITY POLLS & VOTING TAB ---
+  # --- 7. COMMUNITY POLLS & VOTING HUB ---
   elif current_tab == "Polls":
     st.markdown(
         f"""
         <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); padding: 22px; border-radius: 14px; color: white; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(5,150,105,0.2);">
             <h1 style="margin:0; font-weight:700;">📊 Community Polls & Voting Hub</h1>
-            <p style="margin:5px 0 0 0; opacity: 0.9;">Quick resident voting on annual maintenance, club events and committee decisions</p>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Cast your vote on active neighborhood decisions and community proposals</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.info("Active Community Polls")
-    poll_choice = st.radio(
-        "Q1: Should we organize the upcoming Annual Winter Gala in the Community Clubhouse lawn?",
-        ["Yes, absolutely! 🎉", "No, let's keep it indoors 🏢", "Neutral / Undecided 🤷‍♂️"]
-    )
-    if st.button("Cast Vote"):
-      st.success(f"Thank you! Your vote for '{poll_choice}' has been recorded.")
+    df_polls = load_polls_data()
+    org_polls = df_polls[df_polls["Organization"].str.strip() == user_org] if not df_polls.empty else pd.DataFrame()
 
-    st.markdown("---")
-    poll_choice_2 = st.radio(
-        "Q2: Preferred timing for the weekend Yoga and Wellness sessions?",
-        ["6:00 AM - 7:00 AM", "7:30 AM - 8:30 AM", "Evening 6:00 PM"]
-    )
-    if st.button("Cast Vote for Q2"):
-      st.success(f"Thank you! Your vote for '{poll_choice_2}' has been recorded.")
+    if org_polls.empty:
+      st.info("No active community polls at the moment. Community Admin can create one from the admin portal.")
+    else:
+      for _, poll_row in org_polls.iterrows():
+        p_id = poll_row.get("Poll ID", "")
+        question = poll_row.get("Question", "")
+        options_raw = poll_row.get("Options", "")
+        options_list = [opt.strip() for opt in options_raw.split("|") if opt.strip()]
+
+        st.markdown(f"### 🗳️ {question}")
+        vote_choice = st.radio(f"Select option for Poll #{p_id}", options_list, key=f"poll_rad_{p_id}")
+        if st.button("Cast Vote", key=f"vote_btn_{p_id}"):
+          st.success(f"Thank you! Your vote for '{vote_choice}' has been successfully recorded.")
+        st.markdown("---")
 
   # --- 8. LOCALITY ATTRACTIONS & EVENTS TAB ---
   elif current_tab == "Locality Attractions":
@@ -1199,13 +1226,13 @@ else:
             unsafe_allow_html=True,
         )
 
-  # --- 9. COMMITTEE ADMIN PORTAL TAB ---
+  # --- 9. COMMUNITY ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
     st.markdown(
         f"""
         <div style="background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); padding: 22px; border-radius: 14px; color: white; margin-bottom: 20px;">
-            <h1 style="margin:0; font-weight:700;">🛠️ Committee Admin Portal — {user_org}</h1>
-            <p style="margin:5px 0 0 0; opacity: 0.9;">Resident accounts, offboarding, and directory management</p>
+            <h1 style="margin:0; font-weight:700;">🛠️ Community Admin Portal — {user_org}</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Resident accounts, directory management, and custom voting polls</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1213,7 +1240,13 @@ else:
 
     admin_sub_tab = st.selectbox(
         "Admin Actions",
-        ["Manage Resident Directory", "Add New Resident Account", "Reset Resident Password", "Remove Resident Account"]
+        [
+            "Manage Resident Directory",
+            "Add New Resident Account",
+            "Reset Resident Password",
+            "Remove Resident Account",
+            "Create & Manage Community Polls"
+        ]
     )
 
     if admin_sub_tab == "Manage Resident Directory":
@@ -1288,3 +1321,32 @@ else:
               st.rerun()
           except Exception as e:
             st.error(f"Error: {e}")
+
+    elif admin_sub_tab == "Create & Manage Community Polls":
+      st.subheader("Create a New Voting Poll")
+      df_polls = load_polls_data()
+
+      with st.form("new_poll_form", clear_on_submit=True):
+        poll_q = st.text_input("Poll Question", placeholder="e.g. Should we approve the garden renovation budget?")
+        poll_opts = st.text_area("Answer Options (Separate each option with a vertical bar |)", placeholder="Yes, approve it!|No, postpone|Need more details")
+        submit_poll = st.form_submit_button("Launch Poll to Community")
+
+        if submit_poll:
+          if poll_q.strip() and poll_opts.strip():
+            try:
+              client = get_gspread_client()
+              try:
+                ps = client.open_by_key(MASTER_SHEET_ID).worksheet("CommunityPolls")
+              except Exception:
+                ps = client.open_by_key(MASTER_SHEET_ID).add_worksheet(title="CommunityPolls", rows="100", cols="4")
+                ps.append_row(["Poll ID", "Organization", "Question", "Options"])
+
+              new_pid = str(len(df_polls) + 1) if not df_polls.empty else "1"
+              ps.append_row([new_pid, user_org, poll_q.strip(), poll_opts.strip()])
+              st.cache_data.clear()
+              st.success("New community poll launched successfully!")
+              st.rerun()
+            except Exception as e:
+              st.error(f"Error launching poll: {e}")
+          else:
+            st.warning("Please provide both a question and answer options.")
