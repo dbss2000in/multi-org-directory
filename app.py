@@ -91,20 +91,28 @@ def decode_base64_image(b64_str):
     return None
 
 
-# --- HELPER FOR DOB (STRIPPING YEAR & SHOWING ONLY DAY & MONTH) ---
+# --- HELPER FOR DOB (STRICTLY STRIPPING YEAR & SHOWING ONLY MONTH & DAY) ---
 def format_dob(dob_str):
   dob_str = str(dob_str).strip()
   if not dob_str or dob_str.lower() == "none":
     return ""
   
-  # Try various standard date formats (with and without year)
-  for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d", "%m/%d", "%B %d", "%d %B"):
+  # Check standard date formats including full years
+  for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y", "%Y.%m.%d", "%d.%m.%Y"):
     try:
       dt = datetime.strptime(dob_str, fmt)
-      return dt.strftime("%B %d")  # Always outputs Month and Day (e.g. "October 12")
+      return dt.strftime("%B %d")  # Extracts Month and Day (e.g., "October 12")
     except ValueError:
       continue
-  
+      
+  # Check formats without years
+  for fmt in ("%m-%d", "%m/%d", "%B %d", "%d %B", "%b %d", "%d %b"):
+    try:
+      dt = datetime.strptime(dob_str, fmt)
+      return dt.strftime("%B %d")
+    except ValueError:
+      continue
+      
   return dob_str
 
 
@@ -697,7 +705,7 @@ else:
             x_link = str(row.get("Twitter", "")).strip()
             if x_link and x_link != "None":
               if not x_link.startswith("http"):
-                x_link = f"https://{x_link.replace('@', '')}"
+                x_link = f"https://twitter.com/{x_link.replace('@', '')}"
               st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
             else:
               st.markdown("**X (Twitter):** None")
