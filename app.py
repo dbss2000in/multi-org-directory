@@ -13,6 +13,26 @@ st.set_page_config(
     page_title="TogetheSpace v0.2 — Secure Multi-Org Portal", page_icon="🏢", layout="wide"
 )
 
+# --- CUSTOM GOOGLE FONTS & STYLING ---
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Poppins', sans-serif;
+    }
+    
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # --- 1. CONFIGURATION & SECURE GOOGLE DRIVE CONNECTION ---
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -69,6 +89,24 @@ def decode_base64_image(b64_str):
     return base64.b64decode(b64_str)
   except Exception:
     return None
+
+
+# --- HELPER FOR DOB (SHOWING ONLY DAY & MONTH) ---
+def format_dob(dob_str):
+  dob_str = str(dob_str).strip()
+  if not dob_str or dob_str.lower() == "none":
+    return ""
+  try:
+    # Try parsing common formats like YYYY-MM-DD or DD-MM-YYYY
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y"):
+      try:
+        dt = datetime.strptime(dob_str, fmt)
+        return dt.strftime("%B %d")  # e.g. "October 12"
+      except ValueError:
+        continue
+    return dob_str  # Fallback if unparsable
+  except Exception:
+    return dob_str
 
 
 # --- 2. DATA LOADERS FROM GOOGLE SHEETS ---
@@ -325,6 +363,31 @@ def load_private_messages_data():
     return pd.DataFrame(columns=["Organization", "Sender", "Recipient", "Message", "Timestamp", "Image File ID", "ReadStatus"])
 
 
+@st.cache_data(ttl=30)
+def load_learning_hub_data():
+  try:
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(MASTER_SHEET_ID)
+    try:
+      sheet = spreadsheet.worksheet("LearningHub")
+    except Exception:
+      sheet = spreadsheet.add_worksheet(title="LearningHub", rows="500", cols="6")
+      sheet.append_row(["Session ID", "Organization", "Instructor", "Subject", "Description", "ScheduleLink"])
+
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    if df.empty or "Session ID" not in df.columns:
+      sheet.clear()
+      sheet.append_row(["Session ID", "Organization", "Instructor", "Subject", "Description", "ScheduleLink"])
+      data = sheet.get_all_records()
+      df = pd.DataFrame(data)
+
+    df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+    return df.fillna("")
+  except Exception:
+    return pd.DataFrame(columns=["Session ID", "Organization", "Instructor", "Subject", "Description", "ScheduleLink"])
+
+
 # --- 3. SESSION STATE & URL QUERY PARAMS PERSISTENCE ---
 query_params = st.query_params
 
@@ -353,13 +416,20 @@ if "nav_page" not in st.session_state:
 
 # --- 4. AUTHENTICATION / LOGIN VIEW ---
 if not st.session_state["authenticated"]:
-  st.title("🔐 TogetheSpace v0.2 — Portal Login")
-  st.markdown("Please log in using your assigned organizational credentials.")
+  st.markdown(
+      """
+      <div style="text-align: center; padding: 20px;">
+          <h1 style="color: #4f46e5; font-weight: 700;">🔐 TogetheSpace v0.2</h1>
+          <h3 style="color: #64748b; font-weight: 400;">Secure Multi-Org Portal Login</h3>
+      </div>
+      """,
+      unsafe_allow_html=True,
+  )
 
   with st.form("login_form"):
     username_input = st.text_input("Username")
     password_input = st.text_input("Password", type="password")
-    submit_login = st.form_submit_button("Login")
+    submit_login = st.form_submit_button("🚀 Login to Portal")
 
     if submit_login:
       clean_user = username_input.strip()
@@ -405,7 +475,7 @@ else:
   else:
     df_org = pd.DataFrame()
 
-  st.sidebar.title(f"🏢 {user_org}")
+  st.sidebar.markdown(f"<h3 style='color: #4f46e5;'>🏢 {user_org}</h3>", unsafe_allow_html=True)
   st.sidebar.caption("✨ TogetheSpace v0.2")
   st.sidebar.markdown(f"**Logged in as:** `{current_user}`")
   st.sidebar.markdown(f"**Role:** `{current_role.capitalize()}`")
@@ -486,6 +556,10 @@ else:
     st.session_state["nav_page"] = "Private Messages"
     st.rerun()
 
+  if st.sidebar.button("📚 Teaching & Learning Hub", use_container_width=True):
+    st.session_state["nav_page"] = "Learning Hub"
+    st.rerun()
+
   if st.sidebar.button("🌟 Locality Attractions & Events", use_container_width=True):
     st.session_state["nav_page"] = "Locality Attractions"
     st.rerun()
@@ -496,7 +570,7 @@ else:
       st.rerun()
 
   st.sidebar.markdown("---")
-  if st.sidebar.button("Log Out", use_container_width=True):
+  if st.sidebar.button("🚪 Log Out", use_container_width=True):
     st.session_state["authenticated"] = False
     st.session_state["username"] = ""
     st.session_state["role"] = ""
@@ -508,10 +582,17 @@ else:
 
   # --- DIRECTORY TAB (READ-ONLY) ---
   if current_tab == "Directory":
-    st.title(f"📇 {user_org} - Member Directory & SOS")
-    st.caption("✨ Powered by TogetheSpace v0.2")
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">📇 {user_org} — Member Directory & SOS</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Secure organizational contacts and emergency medical info</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    search_query = st.sidebar.text_input("Search Directory (Name or Notes)")
+    search_query = st.sidebar.text_input("🔍 Search Directory (Name or Notes)")
     filtered_df = df_org.copy()
 
     if search_query and not filtered_df.empty:
@@ -533,7 +614,8 @@ else:
         bio_text = str(row.get("Bio", "")).strip()
         org_name = row.get("Organization", user_org)
         member_role = row.get("Role", "Member")
-        birthday = row.get("Birthday", "")
+        raw_birthday = row.get("Birthday", "")
+        formatted_dob = format_dob(raw_birthday)
         timezone = row.get("Timezone", "")
         notes = row.get("Notes", "")
 
@@ -545,8 +627,8 @@ else:
           with meta_cols[0]:
             st.markdown(f"**Role:** `{str(member_role).capitalize()}`")
           with meta_cols[1]:
-            if birthday and birthday != "None":
-              st.markdown(f"🎂 **Birthday:** {birthday}")
+            if formatted_dob:
+              st.markdown(f"🎂 **Birthday:** {formatted_dob}")
           with meta_cols[2]:
             if timezone and timezone != "None":
               st.markdown(f"🌍 **Timezone:** {timezone}")
@@ -584,35 +666,6 @@ else:
             else:
               st.markdown("**WhatsApp Chat:** None")
 
-            wa_call = str(row.get("WhatsApp Call", "")).strip()
-            if wa_call and wa_call != "None":
-              wa_call_digits = "".join(filter(str.isdigit, wa_call))
-              st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
-
-            fb_link = str(row.get("Facebook", "")).strip()
-            if fb_link and fb_link != "None":
-              if not fb_link.startswith("http"):
-                fb_link = f"https://{fb_link}"
-              st.markdown(f"**Facebook:** [Open Profile]({fb_link})")
-
-            insta_link = str(row.get("Instagram", "")).strip()
-            if insta_link and insta_link != "None":
-              if not insta_link.startswith("http"):
-                insta_link = f"https://instagram.com/{insta_link.replace('@', '')}"
-              st.markdown(f"**Instagram:** [Open Profile]({insta_link})")
-
-            x_link = str(row.get("Twitter", "")).strip()
-            if x_link and x_link != "None":
-              if not x_link.startswith("http"):
-                x_link = f"https://{x_link.replace('@', '')}"
-              st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
-
-            web_link = str(row.get("Website", "")).strip()
-            if web_link and web_link != "None":
-              if not web_link.startswith("http"):
-                web_link = f"https://{web_link}"
-              st.markdown(f"**Website:** [Visit Website]({web_link})")
-
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
@@ -637,11 +690,14 @@ else:
 
   # --- NOTICE BOARD TAB ---
   elif current_tab == "Notice Board":
-    st.title(f"📢 Official Notices — {user_org}")
-    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
-        "View official announcements and updates issued by your organization's"
-        " management."
+        f"""
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">📢 Official Notices — {user_org}</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Important announcements and updates from management</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     df_notices = load_notices_data()
@@ -721,11 +777,14 @@ else:
 
   # --- COMMUNITY POSTS FEED TAB ---
   elif current_tab == "Community Feed":
-    st.title(f"💬 Community Discussion Feed — {user_org}")
-    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
-        "Share updates, messages, or notes with other members of your"
-        " organization."
+        f"""
+        <div style="background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">💬 Community Discussion Feed — {user_org}</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Share updates, notes, and photos with your team</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     df_posts = load_posts_data()
@@ -736,15 +795,6 @@ else:
         df_posts[df_posts["Organization"].str.strip() == user_org]
         if not df_posts.empty
         else pd.DataFrame()
-    )
-
-    st.markdown(
-        """
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 12px; color: white; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <h4 style="margin:0 0 8px 0; color:white;">✨ Share an Update with Your Team</h4>
-        </div>
-        """,
-        unsafe_allow_html=True,
     )
 
     with st.form("crisp_post_form", clear_on_submit=True):
@@ -1007,19 +1057,24 @@ else:
 
         st.markdown("<hr style='margin: 24px 0; border: none; border-top: 1px solid #e1e8ed;'>", unsafe_allow_html=True)
 
-  # --- PRIVATE MESSAGES TAB (1-ON-1 SECURE CHAT WITH MANUAL REFRESH & ZERO API QUOTA ISSUES) ---
+  # --- PRIVATE MESSAGES TAB ---
   elif current_tab == "Private Messages":
     col_t1, col_t2 = st.columns([4, 1])
     with col_t1:
-      st.title(f"🔒 Secure Private Messages — {user_org}")
-      st.caption("✨ Powered by TogetheSpace v0.2")
+      st.markdown(
+          f"""
+          <div style="background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+              <h1 style="margin:0; font-weight:700;">🔒 Secure Private Messages — {user_org}</h1>
+              <p style="margin:5px 0 0 0; opacity: 0.9;">1-on-1 private messaging and photo sharing (Bridge mode)</p>
+          </div>
+          """,
+          unsafe_allow_html=True,
+      )
     with col_t2:
       st.markdown("<br>", unsafe_allow_html=True)
       if st.button("🔄 Refresh Chat", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-
-    st.markdown("Exchange private 1-on-1 messages and photos with members of your organization, completely hidden from others.")
 
     df_users_all = load_users_data()
     org_members = (
@@ -1142,12 +1197,113 @@ else:
             else:
               st.warning("Please type a message or attach an image.")
 
+  # --- TEACHING & LEARNING HUB TAB ---
+  elif current_tab == "Learning Hub":
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, #0284c7 0%, #6366f1 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">📚 Teaching & Learning Hub — {user_org}</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Explore sessions on painting, cooking, online counseling, academics, and more!</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    df_hub = load_learning_hub_data()
+    org_hub = (
+        df_hub[df_hub["Organization"].str.strip() == user_org]
+        if not df_hub.empty
+        else pd.DataFrame()
+    )
+
+    with st.expander("➕ Host / Post a New Learning Session", expanded=False):
+      with st.form("learning_session_form", clear_on_submit=True):
+        subject_name = st.text_input("Subject / Skill (e.g., Oil Painting, Baking, Career Counseling)")
+        session_desc = st.text_area("Session Description & Details")
+        schedule_link = st.text_input("Meeting / Schedule Link (Zoom, Google Meet, or notes)")
+        submit_session = st.form_submit_button("Publish Learning Session")
+
+        if submit_session:
+          if subject_name.strip() and session_desc.strip():
+            try:
+              client = get_gspread_client()
+              hub_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("LearningHub")
+              new_session_id = str(len(df_hub) + 1) if not df_hub.empty else "1"
+
+              hub_sheet.append_row([
+                  new_session_id,
+                  user_org,
+                  current_user,
+                  subject_name.strip(),
+                  session_desc.strip(),
+                  schedule_link.strip(),
+              ])
+              st.cache_data.clear()
+              st.success("Learning session published successfully!")
+              st.rerun()
+            except Exception as e:
+              st.error(f"Failed to publish session: {e}")
+          else:
+            st.warning("Please provide a subject and description.")
+
+    st.markdown("---")
+    st.subheader("Available Teaching & Learning Sessions")
+
+    if org_hub.empty:
+      st.info("No learning sessions posted yet. Be the first teacher or student to host one!")
+    else:
+      for _, row in org_hub.iloc[::-1].iterrows():
+        session_id = row.get("Session ID", "")
+        instructor = row.get("Instructor", "")
+        subject = row.get("Subject", "")
+        description = row.get("Description", "")
+        link = row.get("ScheduleLink", "")
+
+        with st.container():
+          st.markdown(
+              f"""
+              <div style="background-color: #ffffff; padding: 18px; border-radius: 10px; border: 1px solid #cbd5e1; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                      <span style="background-color: #0284c7; color: white; padding: 3px 10px; border-radius: 4px; font-size: 13px; font-weight: bold;">🎨 / 🍳 {subject}</span>
+                      <span style="color: #64748b; font-size: 13px;">Instructor: <b>{instructor}</b></span>
+                  </div>
+                  <div style="font-size: 15px; color: #1e293b; line-height: 1.5; white-space: pre-wrap; margin-top: 8px;">{description}</div>
+              </div>
+              """,
+              unsafe_allow_html=True,
+          )
+
+          if link and link != "None":
+            if not link.startswith("http"):
+              link = f"https://{link}"
+            st.markdown(f"🔗 **Join / Schedule:** [Open Session Link]({link})")
+
+          if current_role == "manager" or current_user == instructor:
+            if st.button("🗑️ Delete Session", key=f"del_hub_{session_id}"):
+              try:
+                client = get_gspread_client()
+                hub_sheet = client.open_by_key(MASTER_SHEET_ID).worksheet("LearningHub")
+                cell = hub_sheet.find(str(session_id))
+                if cell:
+                  hub_sheet.delete_rows(cell.row)
+                  st.cache_data.clear()
+                  st.success("Session deleted successfully.")
+                  st.rerun()
+              except Exception as e:
+                st.error(f"Failed to delete session: {e}")
+
+          st.markdown("---")
+
   # --- LOCALITY ATTRACTIONS & EVENTS PORTAL ---
   elif current_tab == "Locality Attractions":
-    st.title(f"🌟 Locality Attractions, Business & Events Bulletin")
-    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
-        "Daily localized updates, attractions, businesses, facilities, and events indexed by category and updated twice daily (Morning & Afternoon)."
+        f"""
+        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">🌟 Locality Attractions, Business & Events Bulletin</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Indexed community facilities and local updates</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     df_locality = load_locality_data()
@@ -1246,11 +1402,14 @@ else:
 
   # --- MANAGER ADMIN PORTAL TAB ---
   elif current_tab == "Manager Admin Portal" and current_role == "manager":
-    st.title(f"🛠️ Manager Administrative Portal — {user_org}")
-    st.caption("✨ Powered by TogetheSpace v0.2")
     st.markdown(
-        "Manage member directory records, create accounts, reset passwords, and"
-        f" offboard staff for **{user_org}**."
+        f"""
+        <div style="background: linear-gradient(135deg, #ef4444 0%, #f97316 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0; font-weight:700;">🛠️ Manager Administrative Portal — {user_org}</h1>
+            <p style="margin:5px 0 0 0; opacity: 0.9;">Staff accounts, offboarding, and directory management</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     admin_sub_tab = st.selectbox(
