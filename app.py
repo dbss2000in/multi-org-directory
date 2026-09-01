@@ -1,6 +1,6 @@
 import base64
 import datetime
-from datetime import datetime, date
+from datetime import datetime
 import hashlib
 import io
 import gspread
@@ -89,35 +89,6 @@ def decode_base64_image(b64_str):
     return base64.b64decode(b64_str)
   except Exception:
     return None
-
-
-# --- HELPER FOR DOB (GUARANTEED YEAR REMOVAL) ---
-def format_dob(dob_val):
-  if not dob_val or str(dob_val).strip().lower() in ["none", ""]:
-    return ""
-  
-  # If Pandas/Python already treated it as a timestamp or datetime object
-  if isinstance(dob_val, (datetime, pd.Timestamp, date)):
-    try:
-      return dob_val.strftime("%B %d")
-    except Exception:
-      pass
-
-  dob_str = str(dob_val).strip()
-  
-  # Clean up timestamp strings if Google Sheets exports them like '1985-08-24 00:00:00'
-  if " " in dob_str:
-    dob_str = dob_str.split(" ")[0]
-
-  # Try parsing across various standard date layouts
-  for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y", "%Y.%m.%d", "%d.%m.%Y", "%m-%d", "%m/%d"):
-    try:
-      dt = datetime.strptime(dob_str, fmt)
-      return dt.strftime("%B %d")  # Strictly outputs only Month and Day (e.g. "August 24")
-    except ValueError:
-      continue
-      
-  return dob_str
 
 
 # --- 2. DATA LOADERS FROM GOOGLE SHEETS ---
@@ -591,11 +562,11 @@ else:
 
   current_tab = st.session_state.get("nav_page", "Directory")
 
-  # --- DIRECTORY TAB (READ-ONLY) ---
+  # --- DIRECTORY TAB (READ-ONLY, SEA GREEN CARDS) ---
   if current_tab == "Directory":
     st.markdown(
         f"""
-        <div style="background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+        <div style="background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
             <h1 style="margin:0; font-weight:700;">📇 {user_org} — Member Directory & SOS</h1>
             <p style="margin:5px 0 0 0; opacity: 0.9;">Secure organizational contacts and emergency medical info</p>
         </div>
@@ -625,117 +596,125 @@ else:
         bio_text = str(row.get("Bio", "")).strip()
         org_name = row.get("Organization", user_org)
         member_role = row.get("Role", "Member")
-        raw_birthday = row.get("Birthday", "")
-        formatted_dob = format_dob(raw_birthday)
+        birthday = str(row.get("Birthday", "")).strip()
         timezone = row.get("Timezone", "")
         notes = row.get("Notes", "")
 
-        with st.expander(f"👤 {name}  |  🏢 {org_name}  |  🩸 Blood Group: {blood}"):
-          if bio_text and bio_text != "None":
-            st.info(f"**Bio:** {bio_text}")
+        # Sea green themed card container
+        st.markdown(
+            f"""
+            <div style="background-color: #e6f4ed; padding: 20px; border-radius: 12px; border: 1.5px solid #a8dab5; margin-bottom: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.03);">
+                <h3 style="margin:0 0 10px 0; color: #065f46;">👤 {name}  |  🏢 {org_name}  |  🩸 Blood Group: {blood}</h3>
+            """,
+            unsafe_allow_html=True,
+        )
 
-          meta_cols = st.columns(4)
-          with meta_cols[0]:
-            st.markdown(f"**Role:** `{str(member_role).capitalize()}`")
-          with meta_cols[1]:
-            if formatted_dob:
-              st.markdown(f"🎂 **Birthday:** {formatted_dob}")
-          with meta_cols[2]:
-            if timezone and timezone != "None":
-              st.markdown(f"🌍 **Timezone:** {timezone}")
-          with meta_cols[3]:
-            if notes and notes != "None":
-              st.markdown(f"📝 **Notes:** {notes}")
+        if bio_text and bio_text != "None":
+          st.info(f"**Bio:** {bio_text}")
 
-          st.markdown("---")
-          col1, col2 = st.columns(2)
+        meta_cols = st.columns(4)
+        with meta_cols[0]:
+          st.markdown(f"**Role:** `{str(member_role).capitalize()}`")
+        with meta_cols[1]:
+          if birthday and birthday.lower() != "none":
+            st.markdown(f"🎂 **Birthday:** {birthday}")
+        with meta_cols[2]:
+          if timezone and timezone != "None":
+            st.markdown(f"🌍 **Timezone:** {timezone}")
+        with meta_cols[3]:
+          if notes and notes != "None":
+            st.markdown(f"📝 **Notes:** {notes}")
 
-          with col1:
-            st.subheader("📞 Communication Details")
-            
-            raw_address = str(row.get("Address", "None"))
-            if raw_address and raw_address != "None":
-              maps_url = f"https://www.google.com/maps/search/?api=1&query={raw_address.replace(' ', '+')}"
-              st.markdown(f"**Address:** [{raw_address}]({maps_url}) (Click to view on Map)")
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+
+        with col1:
+          st.subheader("📞 Communication Details")
+          
+          raw_address = str(row.get("Address", "None"))
+          if raw_address and raw_address != "None":
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={raw_address.replace(' ', '+')}"
+            st.markdown(f"**Address:** [{raw_address}]({maps_url}) (Click to view on Map)")
+          else:
+            st.markdown("**Address:** None")
+
+          phone = str(row.get("Phone Number", ""))
+          if phone and phone != "None":
+            st.markdown(f"**Phone / Call:** [{phone}](tel:{phone})")
+            st.markdown(f"**SMS:** [Send SMS](sms:{phone})")
+          else:
+            st.markdown("**Phone:** None")
+
+          wa_chat = str(row.get("WhatsApp Chat", ""))
+          if wa_chat and wa_chat != "None":
+            if wa_chat.startswith("http"):
+              wa_chat_url = wa_chat
             else:
-              st.markdown("**Address:** None")
+              wa_digits = "".join(filter(str.isdigit, wa_chat))
+              wa_chat_url = f"https://wa.me/{wa_digits}" if wa_digits else "#"
+            st.markdown(f"**WhatsApp Chat:** [Open Chat]({wa_chat_url})")
+          else:
+            st.markdown("**WhatsApp Chat:** None")
 
-            phone = str(row.get("Phone Number", ""))
-            if phone and phone != "None":
-              st.markdown(f"**Phone / Call:** [{phone}](tel:{phone})")
-              st.markdown(f"**SMS:** [Send SMS](sms:{phone})")
-            else:
-              st.markdown("**Phone:** None")
+          wa_call = str(row.get("WhatsApp Call", "")).strip()
+          if wa_call and wa_call != "None":
+            wa_call_digits = "".join(filter(str.isdigit, wa_call))
+            st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
 
-            wa_chat = str(row.get("WhatsApp Chat", ""))
-            if wa_chat and wa_chat != "None":
-              if wa_chat.startswith("http"):
-                wa_chat_url = wa_chat
-              else:
-                wa_digits = "".join(filter(str.isdigit, wa_chat))
-                wa_chat_url = f"https://wa.me/{wa_digits}" if wa_digits else "#"
-              st.markdown(f"**WhatsApp Chat:** [Open Chat]({wa_chat_url})")
-            else:
-              st.markdown("**WhatsApp Chat:** None")
+          fb_link = str(row.get("Facebook", "")).strip()
+          if fb_link and fb_link != "None":
+            if not fb_link.startswith("http"):
+              fb_link = f"https://{fb_link}"
+            st.markdown(f"**Facebook:** [Open Profile]({fb_link})")
+          else:
+            st.markdown("**Facebook:** None")
 
-            wa_call = str(row.get("WhatsApp Call", "")).strip()
-            if wa_call and wa_call != "None":
-              wa_call_digits = "".join(filter(str.isdigit, wa_call))
-              st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
+          insta_link = str(row.get("Instagram", "")).strip()
+          if insta_link and insta_link != "None":
+            if not insta_link.startswith("http"):
+              insta_link = f"https://instagram.com/{insta_link.replace('@', '')}"
+            st.markdown(f"**Instagram:** [Open Profile]({insta_link})")
+          else:
+            st.markdown("**Instagram:** None")
 
-            fb_link = str(row.get("Facebook", "")).strip()
-            if fb_link and fb_link != "None":
-              if not fb_link.startswith("http"):
-                fb_link = f"https://{fb_link}"
-              st.markdown(f"**Facebook:** [Open Profile]({fb_link})")
-            else:
-              st.markdown("**Facebook:** None")
+          x_link = str(row.get("Twitter", "")).strip()
+          if x_link and x_link != "None":
+            if not x_link.startswith("http"):
+              x_link = f"https://twitter.com/{x_link.replace('@', '')}"
+            st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
+          else:
+            st.markdown("**X (Twitter):** None")
 
-            insta_link = str(row.get("Instagram", "")).strip()
-            if insta_link and insta_link != "None":
-              if not insta_link.startswith("http"):
-                insta_link = f"https://instagram.com/{insta_link.replace('@', '')}"
-              st.markdown(f"**Instagram:** [Open Profile]({insta_link})")
-            else:
-              st.markdown("**Instagram:** None")
+          web_link = str(row.get("Website", "")).strip()
+          if web_link and web_link != "None":
+            if not web_link.startswith("http"):
+              web_link = f"https://{web_link}"
+            st.markdown(f"**Website:** [Visit Website]({web_link})")
+          else:
+            st.markdown("**Website:** None")
 
-            x_link = str(row.get("Twitter", "")).strip()
-            if x_link and x_link != "None":
-              if not x_link.startswith("http"):
-                x_link = f"https://{x_link.replace('@', '')}"
-              st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
-            else:
-              st.markdown("**X (Twitter):** None")
+          email_raw = str(row.get("Email", "None")).strip()
+          if email_raw and email_raw != "None":
+            gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
+            st.markdown(f"**Email:** [{email_raw}]({gmail_url})")
+          else:
+            st.markdown("**Email:** None")
 
-            web_link = str(row.get("Website", "")).strip()
-            if web_link and web_link != "None":
-              if not web_link.startswith("http"):
-                web_link = f"https://{web_link}"
-              st.markdown(f"**Website:** [Visit Website]({web_link})")
-            else:
-              st.markdown("**Website:** None")
-
-            email_raw = str(row.get("Email", "None")).strip()
-            if email_raw and email_raw != "None":
-              gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
-              st.markdown(f"**Email:** [{email_raw}]({gmail_url})")
-            else:
-              st.markdown("**Email:** None")
-
-          with col2:
-            st.subheader("🚨 Medical Emergency & SOS")
-            st.error(f"""
-                        - **Blood Group:** {blood}
-                        - **Allergies:** {row.get('Allergies', 'None')}
-                        - **Medical Conditions:** {row.get('Medical Conditions', 'None')}
-                        - **Medications:** {row.get('Medications', 'None')}
-                        """)
-            emerg_phone = str(row.get("Emergency Contact Phone", ""))
-            st.info(f"""
-                        **Emergency Contact:**
-                        - **Name:** {row.get('Emergency Contact Name', 'N/A')} ({row.get('Emergency Contact Relationship', '')})
-                        - **Phone:** [{emerg_phone}](tel:{emerg_phone})
-                        """)
+        with col2:
+          st.subheader("🚨 Medical Emergency & SOS")
+          st.error(f"""
+                      - **Blood Group:** {blood}
+                      - **Allergies:** {row.get('Allergies', 'None')}
+                      - **Medical Conditions:** {row.get('Medical Conditions', 'None')}
+                      - **Medications:** {row.get('Medications', 'None')}
+                      """)
+          emerg_phone = str(row.get("Emergency Contact Phone", ""))
+          st.info(f"""
+                      **Emergency Contact:**
+                      - **Name:** {row.get('Emergency Contact Name', 'N/A')} ({row.get('Emergency Contact Relationship', '')})
+                      - **Phone:** [{emerg_phone}](tel:{emerg_phone})
+                      """)
+        st.markdown("</div>", unsafe_allow_html=True)
 
   # --- NOTICE BOARD TAB ---
   elif current_tab == "Notice Board":
