@@ -97,14 +97,13 @@ def format_dob(dob_str):
   if not dob_str or dob_str.lower() == "none":
     return ""
   try:
-    # Try parsing common formats like YYYY-MM-DD or DD-MM-YYYY
     for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%m/%d/%Y"):
       try:
         dt = datetime.strptime(dob_str, fmt)
-        return dt.strftime("%B %d")  # e.g. "October 12"
+        return dt.strftime("%B %d")
       except ValueError:
         continue
-    return dob_str  # Fallback if unparsable
+    return dob_str
   except Exception:
     return dob_str
 
@@ -641,6 +640,8 @@ else:
 
           with col1:
             st.subheader("📞 Communication Details")
+            
+            # Address Map Link
             raw_address = str(row.get("Address", "None"))
             if raw_address and raw_address != "None":
               maps_url = f"https://www.google.com/maps/search/?api=1&query={raw_address.replace(' ', '+')}"
@@ -648,6 +649,7 @@ else:
             else:
               st.markdown("**Address:** None")
 
+            # Phone & SMS Links
             phone = str(row.get("Phone Number", ""))
             if phone and phone != "None":
               st.markdown(f"**Phone / Call:** [{phone}](tel:{phone})")
@@ -655,6 +657,7 @@ else:
             else:
               st.markdown("**Phone:** None")
 
+            # WhatsApp Chat Link
             wa_chat = str(row.get("WhatsApp Chat", ""))
             if wa_chat and wa_chat != "None":
               if wa_chat.startswith("http"):
@@ -666,6 +669,49 @@ else:
             else:
               st.markdown("**WhatsApp Chat:** None")
 
+            # WhatsApp Call Link
+            wa_call = str(row.get("WhatsApp Call", "")).strip()
+            if wa_call and wa_call != "None":
+              wa_call_digits = "".join(filter(str.isdigit, wa_call))
+              st.markdown(f"**WhatsApp Call:** [Call](https://wa.me/{wa_call_digits})")
+
+            # Facebook Profile Link
+            fb_link = str(row.get("Facebook", "")).strip()
+            if fb_link and fb_link != "None":
+              if not fb_link.startswith("http"):
+                fb_link = f"https://{fb_link}"
+              st.markdown(f"**Facebook:** [Open Profile]({fb_link})")
+            else:
+              st.markdown("**Facebook:** None")
+
+            # Instagram Profile Link
+            insta_link = str(row.get("Instagram", "")).strip()
+            if insta_link and insta_link != "None":
+              if not insta_link.startswith("http"):
+                insta_link = f"https://instagram.com/{insta_link.replace('@', '')}"
+              st.markdown(f"**Instagram:** [Open Profile]({insta_link})")
+            else:
+              st.markdown("**Instagram:** None")
+
+            # Twitter / X Profile Link
+            x_link = str(row.get("Twitter", "")).strip()
+            if x_link and x_link != "None":
+              if not x_link.startswith("http"):
+                x_link = f"https://twitter.com/{x_link.replace('@', '')}"
+              st.markdown(f"**X (Twitter):** [Open Profile]({x_link})")
+            else:
+              st.markdown("**X (Twitter):** None")
+
+            # Website Link
+            web_link = str(row.get("Website", "")).strip()
+            if web_link and web_link != "None":
+              if not web_link.startswith("http"):
+                web_link = f"https://{web_link}"
+              st.markdown(f"**Website:** [Visit Website]({web_link})")
+            else:
+              st.markdown("**Website:** None")
+
+            # Email Link
             email_raw = str(row.get("Email", "None")).strip()
             if email_raw and email_raw != "None":
               gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to={email_raw}"
